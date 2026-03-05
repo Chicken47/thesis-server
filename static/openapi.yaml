@@ -1,0 +1,438 @@
+openapi: 3.0.3
+
+info:
+  title: Stock Analysis API
+  description: |
+    AI-powered fundamental stock analysis using Claude Sonnet (extended thinking) + RAG over scraped financials and PDFs.
+
+    ## Async Pattern
+    The `/analyze` and `/cache-stock` endpoints are async — they return a `job_id` immediately (HTTP 202).
+    Poll `GET /api/jobs/{job_id}` until `status` is `done` or `failed`.
+
+    ```
+    POST /api/analyze/TCS  →  { job_id: "abc-123", status: "queued" }
+    GET  /api/jobs/abc-123  →  { status: "running" }
+    GET  /api/jobs/abc-123  →  { status: "done", result: { verdict, conviction, ... } }
+    ```
+  version: 1.0.0
+  contact:
+    name: Thesis Stock API
+
+servers:
+  - url: http://localhost:5000
+    description: Local development
+  - url: https://your-backend.railway.app
+    description: Production (Railway)
+
+tags:
+  - name: System
+    description: Health and liveness
+  - name: Stocks
+    description: Stock registry
+  - name: Analyses
+    description: AI analysis results
+  - name: Jobs
+    description: Async job polling
+  - name: Admin
+    description: Cache management and metadata
+
+paths:
+
+  /health:
+    get:
+      tags: [System]
+      summary: Health check
+      description: Returns 200 if the server is up. No auth required.
+      operationId: healthCheck
+      responses:
+        "200":
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  service:
+                    type: string
+                    example: thesis-stock-api
+
+  /api/stocks:
+    get:
+      tags: [Stocks]
+      summary: List all stocks
+      description: Returns all tracked stocks with their latest analysis verdict and conviction score.
+      operationId: listStocks
+      responses:
+        "200":
+          description: List of stocks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/StockSummary"
+
+  /api/stocks/{ticker}:
+    get:
+      tags: [Stocks]
+      summary: Get stock with latest analysis
+      description: Returns full stock metadata plus the most recent analysis result.
+      operationId: getStock
+      parameters:
+        - $ref: "#/components/parameters/ticker"
+      responses:
+        "200":
+          description: Stock detail with latest analysis
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StockDetail"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/analyses/{ticker}:
+    get:
+      tags: [Analyses]
+      summary: Analysis history for a stock
+      description: Returns the 10 most recent analyses for the given ticker, newest first.
+      operationId: getAnalysisHistory
+      parameters:
+        - $ref: "#/components/parameters/ticker"
+      responses:
+        "200":
+          description: List of analyses (up to 10)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Analysis"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/analyze/{ticker}:
+    post:
+      tags: [Analyses]
+      summary: Trigger async AI analysis
+      description: |
+        Starts a full analysis pipeline in the background:
+        1. Scrapes Screener.in for latest financials
+        2. Queries RAG index (ChromaDB) for relevant PDF passages
+        3. Calls Claude Sonnet with extended thinking (3-5 min)
+        4. Saves result to Supabase
+
+        Returns a `job_id` immediately. Poll `GET /api/jobs/{job_id}` for status.
+      operationId: triggerAnalysis
+      parameters:
+        - $ref: "#/components/parameters/ticker"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                screener_path:
+                  type: string
+                  description: Screener.in path override (default /company/{ticker}/consolidated/)
+                  example: /company/TCS/consolidated/
+      responses:
+        "202":
+          description: Job queued successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobQueued"
+        "409":
+          description: Analysis already running for this ticker
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/jobs/{job_id}:
+    get:
+      tags: [Jobs]
+      summary: Poll job status
+      description: |
+        Poll until `status` is `done` or `failed`. When `done`, the response includes
+        a lightweight `result` summary (verdict, conviction, summary, sector).
+        Fetch the full analysis from `GET /api/analyses/{ticker}` if needed.
+      operationId: getJobStatus
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Job ID returned by /analyze or /cache-stock
+      responses:
+        "200":
+          description: Job status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/cache-stock/{ticker}:
+    post:
+      tags: [Admin]
+      summary: Build RAG cache for a stock
+      description: |
+        Runs the full cache pipeline in the background:
+        1. Scrapes Screener.in (financials, about, news)
+        2. Downloads annual report PDFs
+        3. Builds ChromaDB vector index
+
+        Run once per stock before first analysis. Refresh quarterly with `force: true`.
+        Takes 2-5 minutes (PDF downloads are the bottleneck).
+      operationId: cacheStock
+      parameters:
+        - $ref: "#/components/parameters/ticker"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                screener_path:
+                  type: string
+                  example: /company/TCS/consolidated/
+                force:
+                  type: boolean
+                  default: false
+                  description: Force re-scrape even if data is fresh
+      responses:
+        "202":
+          description: Cache job queued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobQueued"
+
+  /api/sectors:
+    get:
+      tags: [Admin]
+      summary: List all sectors
+      description: Returns all sectors from the database, ordered by name.
+      operationId: listSectors
+      responses:
+        "200":
+          description: List of sectors
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Sector"
+
+components:
+
+  parameters:
+    ticker:
+      name: ticker
+      in: path
+      required: true
+      schema:
+        type: string
+        example: TCS
+      description: Stock ticker symbol (case-insensitive, auto-uppercased)
+
+  responses:
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          example: Stock not found
+
+    JobQueued:
+      type: object
+      properties:
+        job_id:
+          type: string
+          format: uuid
+          example: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+        ticker:
+          type: string
+          example: TCS
+        status:
+          type: string
+          enum: [queued]
+          example: queued
+        message:
+          type: string
+          example: "Analysis started for TCS. Poll GET /api/jobs/{job_id} for status."
+
+    Job:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        stock_symbol:
+          type: string
+          example: TCS
+        job_type:
+          type: string
+          enum: [analyze, cache_stock]
+        status:
+          type: string
+          enum: [queued, running, done, failed]
+        created_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        finished_at:
+          type: string
+          format: date-time
+          nullable: true
+        error_message:
+          type: string
+          nullable: true
+        result_id:
+          type: string
+          format: uuid
+          nullable: true
+        result:
+          nullable: true
+          description: Populated when status=done
+          $ref: "#/components/schemas/AnalysisSummary"
+
+    StockSummary:
+      type: object
+      properties:
+        symbol:
+          type: string
+          example: TCS
+        name:
+          type: string
+          example: Tata Consultancy Services
+        sector:
+          type: string
+          nullable: true
+          example: Technology
+        latest_verdict:
+          type: string
+          nullable: true
+          enum: [BUY, HOLD, SELL, null]
+        latest_conviction:
+          type: number
+          nullable: true
+          example: 8.2
+        last_analysed_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    StockDetail:
+      allOf:
+        - $ref: "#/components/schemas/StockSummary"
+        - type: object
+          properties:
+            screener_path:
+              type: string
+              example: /company/TCS/consolidated/
+            latest_analysis:
+              nullable: true
+              $ref: "#/components/schemas/Analysis"
+
+    AnalysisSummary:
+      type: object
+      description: Lightweight result included in job polling response
+      properties:
+        verdict:
+          type: string
+          enum: [BUY, HOLD, SELL]
+        conviction:
+          type: number
+          example: 8.2
+        conviction_breakdown:
+          type: object
+          description: Per-dimension conviction scores
+          example:
+            earnings_quality: 8
+            balance_sheet: 9
+            growth_trajectory: 7
+            management_quality: 8
+            valuation: 7
+            moat: 9
+        summary:
+          type: string
+          example: TCS shows strong earnings quality and a wide moat in IT services.
+        sector:
+          type: string
+          nullable: true
+          example: Technology
+
+    Analysis:
+      allOf:
+        - $ref: "#/components/schemas/AnalysisSummary"
+        - type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            stock_symbol:
+              type: string
+              example: TCS
+            created_at:
+              type: string
+              format: date-time
+            bull_case:
+              type: string
+              nullable: true
+            bear_case:
+              type: string
+              nullable: true
+            watch_for_next_quarter:
+              type: string
+              nullable: true
+            news_sentiment:
+              type: object
+              nullable: true
+              properties:
+                score:
+                  type: number
+                label:
+                  type: string
+                highlights:
+                  type: array
+                  items:
+                    type: string
+            step_outputs:
+              type: object
+              nullable: true
+              description: Raw intermediate outputs from each pipeline step (for debugging)
+
+    Sector:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: Technology
+        description:
+          type: string
+          nullable: true

@@ -1,0 +1,49 @@
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+venv/
+.venv/
+env/
+
+# ── Environment ───────────────────────────────────────────────────────────────
+.env
+*.env.local
+
+# ── Stock cache (large, local — ChromaDB lives here) ──────────────────────────
+stock_cache/
+data/
+
+# ── Frontend (managed separately) ─────────────────────────────────────────────
+thesis-web-client/
+
+# ── ChromaDB (legacy global index) ────────────────────────────────────────────
+chroma_db/
+
+# ── Node (scraper/) ───────────────────────────────────────────────────────────
+node_modules/
+scraper/node_modules/
+
+# ── macOS ─────────────────────────────────────────────────────────────────────
+.DS_Store
+
+# ── Local tooling ─────────────────────────────────────────────────────────────
+.claude/
+.mcp.json
+.next/
+
+# ── Misc generated output ─────────────────────────────────────────────────────
+output/
+*.pdf
+
+# ── Puppeteer browser cache ────────────────────────────────────────────────────
+scraper/.cache/
+.puppeteer/
+
+# ── IDE ───────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
