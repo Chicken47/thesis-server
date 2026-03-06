@@ -49,6 +49,13 @@ def trigger_analysis(ticker: str):
     }), 202
 
 
+@admin_bp.get("/rag-status/<ticker>")
+def rag_status(ticker: str):
+    """Check if RAG index exists for a ticker — no job started."""
+    from rag.stock_indexer import index_exists
+    return jsonify({"rag_available": index_exists(ticker.upper())})
+
+
 @admin_bp.get("/screener-data/<ticker>")
 def screener_data(ticker: str):
     """Scrape live from Screener.in, persist to DB, return raw JSON."""
