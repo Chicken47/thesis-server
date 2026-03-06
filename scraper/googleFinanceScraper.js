@@ -14,6 +14,16 @@ const extractTickerFromScreenerUrl = (link) => {
  * @param {string} screenerLink - e.g. "/company/INFY/consolidated/"
  * @returns {{ financialData: Array, newsDetails: Array }}
  */
+const GF_CHROME_ARGS = [
+  "--no-sandbox",
+  "--disable-setuid-sandbox",
+  "--disable-dev-shm-usage",
+  "--disable-gpu",
+  "--disable-extensions",
+  "--no-first-run",
+  "--mute-audio",
+];
+
 export const getIndianIndices = async (screenerLink) => {
   const browser = await puppeteer.launch({
     headless: "new",
@@ -21,8 +31,14 @@ export const getIndianIndices = async (screenerLink) => {
       process.platform === "darwin"
         ? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
         : undefined,
+    args: GF_CHROME_ARGS,
   });
   const page = await browser.newPage();
+  await page.setRequestInterception(true);
+  page.on("request", (req) => {
+    if (["image", "media", "font"].includes(req.resourceType())) { req.abort(); return; }
+    req.continue();
+  });
 
   try {
     const listingName = extractTickerFromScreenerUrl(screenerLink);
@@ -31,9 +47,10 @@ export const getIndianIndices = async (screenerLink) => {
     }
 
     await page.goto(`https://www.google.com/finance/quote/${listingName}:NSE`, {
-      waitUntil: "networkidle2",
+      waitUntil: "domcontentloaded",
+      timeout: 30000,
     });
-    await page.waitForSelector(".lkR3Y", { timeout: 15000 });
+    await page.waitForSelector(".lkR3Y", { timeout: 15000 }).catch(() => {});
 
     const newsDetails = await page.evaluate(() =>
       Array.from(document.querySelectorAll(".yY3Lee")).map((el) => ({

@@ -32,16 +32,29 @@ export async function fetchGoogleNews(query, maxResults = 8) {
       process.platform === "darwin"
         ? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
         : undefined,
-    args: ["--no-sandbox", "--disable-setuid-sandbox"],
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-gpu",
+      "--disable-extensions",
+      "--no-first-run",
+      "--mute-audio",
+    ],
   });
 
   const page = await browser.newPage();
+  await page.setRequestInterception(true);
+  page.on("request", (req) => {
+    if (["image", "media", "font"].includes(req.resourceType())) { req.abort(); return; }
+    req.continue();
+  });
   await page.setUserAgent(
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
   );
 
   try {
-    await page.goto(url, { waitUntil: "networkidle2", timeout: 25000 });
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 25000 });
 
     // Wait for title links — fail silently if nothing loads
     await page

@@ -1,6 +1,18 @@
 import puppeteer from "puppeteer";
 import { getIndianIndices } from "./googleFinanceScraper.js";
 
+const CHROME_ARGS = [
+  "--no-sandbox",
+  "--disable-setuid-sandbox",
+  "--disable-dev-shm-usage",   // critical in containers — avoids /dev/shm exhaustion
+  "--disable-gpu",
+  "--disable-extensions",
+  "--disable-background-networking",
+  "--disable-default-apps",
+  "--no-first-run",
+  "--mute-audio",
+];
+
 const launchBrowser = () =>
   puppeteer.launch({
     headless: "new",
@@ -8,6 +20,7 @@ const launchBrowser = () =>
       process.platform === "darwin"
         ? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
         : undefined,
+    args: CHROME_ARGS,
   });
 
 const getAboutText = async (page) => {
@@ -290,7 +303,13 @@ export const scrapeScreenerPage = async (screenerLink) => {
   let stockChartResponse = null;
   let encodedSecret = "";
 
+  const BLOCKED_TYPES = new Set(["image", "media", "font", "stylesheet"]);
+
   page.on("request", (req) => {
+    if (BLOCKED_TYPES.has(req.resourceType())) {
+      req.abort();
+      return;
+    }
     const url = req.url();
     if (!encodedSecret && url.includes("/chart/")) {
       encodedSecret = Buffer.from(url).toString("base64");
@@ -313,9 +332,11 @@ export const scrapeScreenerPage = async (screenerLink) => {
 
   try {
     await page.goto(`https://screener.in${screenerLink}`, {
-      waitUntil: "networkidle2",
+      waitUntil: "domcontentloaded",
+      timeout: 60000,
     });
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    // Wait for the key data sections to appear instead of a fixed pause
+    await page.waitForSelector("#top-ratios", { timeout: 30000 }).catch(() => {});
 
     const [aboutText, ratios, shareholding, quartersData, prosConsData] =
       await Promise.all([
@@ -378,7 +399,13 @@ export const fetchFullStockData = async (screenerLink) => {
   let stockChartResponse = null;
   let encodedSecret = "";
 
+  const BLOCKED_TYPES_FULL = new Set(["image", "media", "font", "stylesheet"]);
+
   page.on("request", (req) => {
+    if (BLOCKED_TYPES_FULL.has(req.resourceType())) {
+      req.abort();
+      return;
+    }
     const url = req.url();
     if (!encodedSecret && url.includes("/chart/")) {
       encodedSecret = Buffer.from(url).toString("base64");
@@ -401,9 +428,10 @@ export const fetchFullStockData = async (screenerLink) => {
 
   try {
     await page.goto(`https://screener.in${screenerLink}`, {
-      waitUntil: "networkidle2",
+      waitUntil: "domcontentloaded",
+      timeout: 60000,
     });
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    await page.waitForSelector("#top-ratios", { timeout: 30000 }).catch(() => {});
 
     // Scrape all sections in parallel — they're all on the same loaded page
     const [
