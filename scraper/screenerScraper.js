@@ -78,6 +78,63 @@ async function fetchChartData(companyId, isConsolidated) {
   }
 }
 
+async function fetchPeerComparison(companyId) {
+  try {
+    const url = `https://www.screener.in/api/company/${companyId}/peers/`;
+    const { data: html } = await axios.get(url, {
+      headers: { ...API_HEADERS, Accept: "text/html, */*" },
+      timeout: 15000,
+      responseType: "text",
+    });
+
+    const $ = cheerio.load(html);
+    const table = $("table.data-table").first();
+    if (!table.length) return { headings: [], peers: [], median: null };
+
+    // Screener injects the table with headers in the first tbody <tr> (no <thead>)
+    const headerRow = table.find("tbody tr:first-child");
+    const headings = headerRow
+      .find("th")
+      .map((_, th) => {
+        const tooltip = $(th).attr("data-tooltip");
+        if (tooltip) return tooltip;
+        return $(th).text().replace(/\s+/g, " ").trim();
+      })
+      .get()
+      .filter((h) => h);
+
+    const peers = table
+      .find("tbody tr")
+      .filter((_, row) => $(row).find("td").length > 0)
+      .map((_, row) => {
+        const cells = $(row).find("td");
+        const obj = {};
+        headings.forEach((h, i) => {
+          const cell = cells.eq(i);
+          const link = cell.find("a");
+          obj[h] = link.length ? link.text().trim() : cell.text().trim();
+        });
+        return obj;
+      })
+      .get()
+      .filter((p) => Object.values(p).some((v) => v));
+
+    const medianRow = table.find("tfoot tr");
+    let median = null;
+    if (medianRow.length) {
+      const cells = medianRow.find("td");
+      median = {};
+      headings.forEach((h, i) => {
+        median[h] = cells.eq(i).text().trim() || "";
+      });
+    }
+
+    return { headings, peers, median };
+  } catch {
+    return { headings: [], peers: [], median: null };
+  }
+}
+
 // ── HTML parsers (all sync, operate on a loaded cheerio $ instance) ────────────
 
 function getAboutText($) {
@@ -192,51 +249,6 @@ function scrapeFinancialTable($, sectionId) {
   return { headings, values };
 }
 
-function getPeerComparison($) {
-  const table = $(
-    "#peers-table-placeholder table.data-table, #peers table.data-table"
-  ).first();
-  if (!table.length) return { headings: [], peers: [], median: null };
-
-  const headerRow = table.find("tbody tr:first-child");
-  const headings = headerRow
-    .find("th")
-    .map((_, th) => {
-      const tooltip = $(th).attr("data-tooltip");
-      if (tooltip) return tooltip;
-      return $(th).text().replace(/\s+/g, " ").trim();
-    })
-    .get()
-    .filter((h) => h);
-
-  const peers = table
-    .find("tbody tr")
-    .filter((_, row) => $(row).find("td").length > 0)
-    .map((_, row) => {
-      const cells = $(row).find("td");
-      const obj = {};
-      headings.forEach((h, i) => {
-        const cell = cells.eq(i);
-        const link = cell.find("a");
-        obj[h] = link.length ? link.text().trim() : cell.text().trim();
-      });
-      return obj;
-    })
-    .get()
-    .filter((p) => Object.values(p).some((v) => v));
-
-  const medianRow = table.find("tfoot tr");
-  let median = null;
-  if (medianRow.length) {
-    const cells = medianRow.find("td");
-    median = {};
-    headings.forEach((h, i) => {
-      median[h] = cells.eq(i).text().trim() || "";
-    });
-  }
-
-  return { headings, peers, median };
-}
 
 function getDocumentLinks($) {
   const section = $("#documents");
@@ -328,9 +340,10 @@ export const scrapeScreenerPage = async (screenerLink) => {
   const companyId = extractCompanyId($);
   process.stderr.write(`[screenerScraper] company_id=${companyId || "not found"}\n`);
 
-  const stockChartResponse = companyId
-    ? await fetchChartData(companyId, isConsolidated)
-    : null;
+  const [stockChartResponse, peerComparison] = await Promise.all([
+    companyId ? fetchChartData(companyId, isConsolidated) : Promise.resolve(null),
+    companyId ? fetchPeerComparison(companyId) : Promise.resolve({ headings: [], peers: [], median: null }),
+  ]);
 
   const encodedSecret = companyId
     ? Buffer.from(
@@ -338,13 +351,29 @@ export const scrapeScreenerPage = async (screenerLink) => {
       ).toString("base64")
     : "";
 
+  const aboutText = getAboutText($);
+  const ratios = getRatios($);
+  const shareholding = getShareholding($);
+  const quartersData = getQuartersData($);
+  const prosConsData = getProsConsData($);
+
+  const log = (k, v) => process.stderr.write(`[scrape] ${k}: ${v}\n`);
+  log("aboutText", aboutText ? `${aboutText.slice(0, 80)}...` : "EMPTY");
+  log("ratios", `${ratios.length} items — first: ${ratios[0] ? `${ratios[0].name}=${ratios[0].value}` : "none"}`);
+  log("shareholding", `${shareholding.length} rows`);
+  log("quartersData", `${quartersData.headings.length} cols, ${quartersData.values.length} rows`);
+  log("prosConsData", `pros=${prosConsData.pros.length} cons=${prosConsData.cons.length}`);
+  log("peerComparison", `${peerComparison.peers.length} peers`);
+  log("chart", stockChartResponse ? `datasets=${stockChartResponse.datasets?.length ?? 0}` : "EMPTY");
+
   return {
     stockChartResponse,
-    aboutText: getAboutText($),
-    ratios: getRatios($),
-    shareholding: getShareholding($),
-    quartersData: getQuartersData($),
-    prosConsData: getProsConsData($),
+    aboutText,
+    ratios,
+    shareholding,
+    quartersData,
+    prosConsData,
+    peerComparison,
     encodedSecret,
   };
 };
@@ -368,9 +397,10 @@ export const fetchFullStockData = async (screenerLink) => {
   const companyId = extractCompanyId($);
   process.stderr.write(`[screenerScraper] company_id=${companyId || "not found"}\n`);
 
-  const stockChartResponse = companyId
-    ? await fetchChartData(companyId, isConsolidated)
-    : null;
+  const [stockChartResponse, peerComparison] = await Promise.all([
+    companyId ? fetchChartData(companyId, isConsolidated) : Promise.resolve(null),
+    companyId ? fetchPeerComparison(companyId) : Promise.resolve({ headings: [], peers: [], median: null }),
+  ]);
 
   const encodedSecret = companyId
     ? Buffer.from(
@@ -378,20 +408,45 @@ export const fetchFullStockData = async (screenerLink) => {
       ).toString("base64")
     : "";
 
+  const aboutText = getAboutText($);
+  const ratios = getRatios($);
+  const shareholding = getShareholding($);
+  const quartersData = getQuartersData($);
+  const prosConsData = getProsConsData($);
+  const annualPL = scrapeFinancialTable($, "profit-loss");
+  const balanceSheet = scrapeFinancialTable($, "balance-sheet");
+  const cashFlows = scrapeFinancialTable($, "cash-flow");
+  const ratiosHistory = scrapeFinancialTable($, "ratios");
+  const documents = getDocumentLinks($);
+
+  const log = (k, v) => process.stderr.write(`[scrape] ${k}: ${v}\n`);
+  log("aboutText", aboutText ? `${aboutText.slice(0, 80)}...` : "EMPTY");
+  log("ratios", `${ratios.length} items — first: ${ratios[0] ? `${ratios[0].name}=${ratios[0].value}` : "none"}`);
+  log("shareholding", `${shareholding.length} rows`);
+  log("quartersData", `${quartersData.headings.length} cols, ${quartersData.values.length} rows`);
+  log("prosConsData", `pros=${prosConsData.pros.length} cons=${prosConsData.cons.length}`);
+  log("annualPL", `${annualPL.headings.length} cols, ${annualPL.values.length} rows`);
+  log("balanceSheet", `${balanceSheet.headings.length} cols, ${balanceSheet.values.length} rows`);
+  log("cashFlows", `${cashFlows.headings.length} cols, ${cashFlows.values.length} rows`);
+  log("ratiosHistory", `${ratiosHistory.headings.length} cols, ${ratiosHistory.values.length} rows`);
+  log("peerComparison", `${peerComparison.peers.length} peers`);
+  log("documents", `${documents.length} docs (concalls=${documents.filter(d => d.category === "concall").length})`);
+  log("chart", stockChartResponse ? `datasets=${stockChartResponse.datasets?.length ?? 0}` : "EMPTY");
+
   return {
     stockChartResponse,
     encodedSecret,
-    aboutText: getAboutText($),
-    ratios: getRatios($),
-    shareholding: getShareholding($),
-    quartersData: getQuartersData($),
-    prosConsData: getProsConsData($),
-    annualPL: scrapeFinancialTable($, "profit-loss"),
-    balanceSheet: scrapeFinancialTable($, "balance-sheet"),
-    cashFlows: scrapeFinancialTable($, "cash-flow"),
-    ratiosHistory: scrapeFinancialTable($, "ratios"),
-    peerComparison: getPeerComparison($),
-    documents: getDocumentLinks($),
+    aboutText,
+    ratios,
+    shareholding,
+    quartersData,
+    prosConsData,
+    annualPL,
+    balanceSheet,
+    cashFlows,
+    ratiosHistory,
+    peerComparison,
+    documents,
     scrapedAt: new Date().toISOString(),
   };
 };
