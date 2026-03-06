@@ -1,22 +1,13 @@
 /**
- * Google News scraper — searches by query and returns recent news items.
- * Extracted from user's Next.js API route for standalone use.
- *
- * Usage:
- *   import { fetchGoogleNews } from "./googleNewsScraper.js";
- *   const news = await fetchGoogleNews("TCS NSE India");
+ * Google News scraper — uses RSS feed via axios, no browser required.
+ * RSS endpoint: https://news.google.com/rss/search?q=...&hl=en-IN&gl=IN&ceid=IN:en
  */
 
-import puppeteer from "puppeteer";
-
-const SELECTORS = {
-  titleLink: "a.JtKRv",
-  source: "div.vr1PYe",
-  time: "time.hvbAAd",
-};
+import axios from "axios";
+import * as cheerio from "cheerio";
 
 /**
- * Search Google News India for a stock-related query.
+ * Search Google News India for a stock-related query via RSS.
  *
  * @param {string} query - e.g. "TCS NSE India stock"
  * @param {number} maxResults - max articles to return (default 8)
@@ -24,69 +15,40 @@ const SELECTORS = {
  */
 export async function fetchGoogleNews(query, maxResults = 8) {
   const encodedQuery = encodeURIComponent(query);
-  const url = `https://news.google.com/search?q=${encodedQuery}&hl=en-IN&gl=IN&ceid=IN:en`;
-
-  const browser = await puppeteer.launch({
-    headless: "new",
-    executablePath:
-      process.platform === "darwin"
-        ? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-        : undefined,
-    args: [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-dev-shm-usage",
-      "--disable-gpu",
-      "--disable-extensions",
-      "--no-first-run",
-      "--mute-audio",
-    ],
-  });
-
-  const page = await browser.newPage();
-  await page.setRequestInterception(true);
-  page.on("request", (req) => {
-    if (["image", "media", "font"].includes(req.resourceType())) { req.abort(); return; }
-    req.continue();
-  });
-  await page.setUserAgent(
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-  );
+  const url = `https://news.google.com/rss/search?q=${encodedQuery}&hl=en-IN&gl=IN&ceid=IN:en`;
 
   try {
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 25000 });
+    const { data: xml } = await axios.get(url, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        Accept: "application/rss+xml, application/xml, text/xml, */*",
+      },
+      timeout: 15000,
+      responseType: "text",
+    });
 
-    // Wait for title links — fail silently if nothing loads
-    await page
-      .waitForSelector(SELECTORS.titleLink, { timeout: 10000 })
-      .catch(() => {});
+    const $ = cheerio.load(xml, { xmlMode: true });
 
-    // Collect all three selectors by index — they appear in the same order on the page
-    const articles = await page.evaluate(({ titleLink, source, time }) => {
-      const titles = Array.from(document.querySelectorAll(titleLink));
-      const sources = Array.from(document.querySelectorAll(source));
-      const times = Array.from(document.querySelectorAll(time));
+    const items = [];
+    $("item").each((_, el) => {
+      if (items.length >= maxResults) return false;
+      const $el = $(el);
+      const title = $el.find("title").first().text().trim();
+      const link =
+        $el.find("link").first().text().trim() ||
+        $el.find("guid").first().text().trim();
+      const pubDate = $el.find("pubDate").first().text().trim();
+      const source = $el.find("source").first().text().trim() || "";
+      if (!title) return;
+      items.push({ title, source, time: pubDate, url: link });
+    });
 
-      return titles.slice(0, 12).map((titleEl, i) => {
-        const rawHref = titleEl.getAttribute("href") || "";
-        const newsUrl = rawHref.startsWith(".")
-          ? "https://news.google.com/" + rawHref.slice(2)
-          : rawHref;
-
-        return {
-          title: titleEl.innerText?.trim() || "",
-          source: sources[i]?.innerText?.trim() || "",
-          time:
-            times[i]?.getAttribute("datetime") ||
-            times[i]?.innerText?.trim() ||
-            "",
-          url: newsUrl,
-        };
-      }).filter((item) => item.title.length > 0);
-    }, SELECTORS);
-
-    return articles.slice(0, maxResults);
-  } finally {
-    await browser.close();
+    return items;
+  } catch (err) {
+    process.stderr.write(
+      `[googleNewsScraper] RSS fetch failed: ${err.message}\n`
+    );
+    return [];
   }
 }

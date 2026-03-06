@@ -1,482 +1,462 @@
-import puppeteer from "puppeteer";
-import { getIndianIndices } from "./googleFinanceScraper.js";
-
-const CHROME_ARGS = [
-  "--no-sandbox",
-  "--disable-setuid-sandbox",
-  "--disable-dev-shm-usage",   // critical in containers — avoids /dev/shm exhaustion
-  "--disable-gpu",
-  "--disable-extensions",
-  "--disable-background-networking",
-  "--disable-default-apps",
-  "--no-first-run",
-  "--mute-audio",
-];
-
-const launchBrowser = () =>
-  puppeteer.launch({
-    headless: "new",
-    executablePath:
-      process.platform === "darwin"
-        ? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-        : undefined,
-    args: CHROME_ARGS,
-  });
-
-const getAboutText = async (page) => {
-  try {
-    return await page.$eval(".show-more-box.about > p", (p) =>
-      p?.textContent?.trim()
-    );
-  } catch {
-    return "";
-  }
-};
-
-const getRatios = async (page) => {
-  try {
-    return await page.$$eval("#top-ratios li", (ratiosList) =>
-      ratiosList.map((ratio) => ({
-        name: ratio.querySelector(".name")?.textContent?.trim(),
-        value: ratio.querySelector(".value .number")?.textContent?.trim(),
-      }))
-    );
-  } catch {
-    return [];
-  }
-};
-
-const getShareholding = async (page) => {
-  try {
-    return await page.evaluate(() => {
-      const table = document.querySelector(
-        "#shareholding .responsive-holder .data-table"
-      );
-      if (!table) return [];
-
-      const headers = Array.from(
-        table.querySelectorAll("thead th:not(.text)")
-      ).map((th) => th.textContent.trim());
-
-      const rows = table.querySelectorAll("tbody tr:not(.sub)");
-      return Array.from(rows).map((row) => {
-        const cells = row.querySelectorAll("td");
-        const rowData = { category: cells[0]?.textContent.trim() || "" };
-        headers.forEach((col, i) => {
-          rowData[col] = cells[i + 1]?.textContent.trim() || "";
-        });
-        return rowData;
-      });
-    });
-  } catch {
-    return [];
-  }
-};
-
-const getQuartersData = async (page) => {
-  try {
-    return await page.evaluate(() => {
-      const section = document.getElementById("quarters");
-      const table = section?.querySelector("table.data-table");
-      if (!table) return { headings: [], values: [] };
-
-      const headings = Array.from(table.querySelectorAll("thead th"))
-        .slice(1)
-        .map((th) => th.textContent.trim());
-
-      const rows = Array.from(table.querySelectorAll("tbody tr"));
-      const values = rows
-        .map((row) => ({
-          category: row.querySelector("td.text")?.textContent.trim() || "",
-          values: Array.from(row.querySelectorAll("td"))
-            .slice(1)
-            .map((td) => td.textContent.trim()),
-        }))
-        .filter((row) => row.category);
-
-      return { headings, values };
-    });
-  } catch {
-    return { headings: [], values: [] };
-  }
-};
-
-const getProsConsData = async (page) => {
-  try {
-    return await page.evaluate(() => ({
-      pros: Array.from(document.querySelectorAll(".pros li")).map((li) =>
-        li.textContent.trim()
-      ),
-      cons: Array.from(document.querySelectorAll(".cons li")).map((li) =>
-        li.textContent.trim()
-      ),
-    }));
-  } catch {
-    return { pros: [], cons: [] };
-  }
-};
-
 /**
- * Generic financial table scraper — reused for P&L, Balance Sheet, Cash Flow, Ratios.
- * All these sections have the same table.data-table structure on Screener.
+ * Screener.in scraper — axios + cheerio, no browser required.
+ * Replaces the Puppeteer-based implementation for server environments with limited CPU.
  */
-const scrapeFinancialTable = async (page, sectionId) => {
-  try {
-    return await page.evaluate((id) => {
-      const section = document.getElementById(id);
-      const table = section?.querySelector("table.data-table");
-      if (!table) return { headings: [], values: [] };
 
-      const headings = Array.from(table.querySelectorAll("thead th"))
-        .slice(1)
-        .map((th) => th.textContent.trim());
+import axios from "axios";
+import * as cheerio from "cheerio";
 
-      const rows = Array.from(table.querySelectorAll("tbody tr"));
-      const values = rows
-        .map((row) => ({
-          category: row.querySelector("td.text, td:first-child")?.textContent.trim() || "",
-          values: Array.from(row.querySelectorAll("td:not(:first-child)"))
-            .map((td) => td.textContent.trim()),
-          isTtm: row.classList.contains("bold") || false,
-        }))
-        .filter((row) => row.category && row.category !== "");
-
-      return { headings, values };
-    }, sectionId);
-  } catch {
-    return { headings: [], values: [] };
-  }
+const PAGE_HEADERS = {
+  "User-Agent":
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  Accept:
+    "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+  "Accept-Language": "en-IN,en-US;q=0.9,en;q=0.8",
+  "Accept-Encoding": "gzip, deflate, br",
+  Connection: "keep-alive",
+  "Upgrade-Insecure-Requests": "1",
 };
 
-const getPeerComparison = async (page) => {
+const API_HEADERS = {
+  "User-Agent":
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+  Accept: "application/json, text/javascript, */*; q=0.01",
+  Referer: "https://www.screener.in/",
+  "X-Requested-With": "XMLHttpRequest",
+};
+
+async function fetchHtml(url) {
+  const { data } = await axios.get(url, {
+    headers: PAGE_HEADERS,
+    timeout: 30000,
+    responseType: "text",
+  });
+  return data;
+}
+
+/** Extract Screener's internal company numeric ID from embedded HTML */
+function extractCompanyId($) {
+  // 1. data attribute on chart container
+  const fromAttr =
+    $("[data-company_id]").attr("data-company_id") ||
+    $("[data-company-id]").attr("data-company-id");
+  if (fromAttr) return fromAttr;
+
+  // 2. Script tag: var id = 12345  or  id: 12345
+  let id = null;
+  $("script").each((_, el) => {
+    const text = $(el).html() || "";
+    const m =
+      text.match(/\bvar\s+id\s*=\s*['"']?(\d+)['"']?/) ||
+      text.match(/"company_id"\s*:\s*(\d+)/) ||
+      text.match(/company\.id\s*=\s*(\d+)/);
+    if (m) {
+      id = m[1];
+      return false;
+    }
+  });
+  if (id) return id;
+
+  // 3. Meta tag
+  const meta = $('meta[name="company_id"]').attr("content");
+  if (meta) return meta;
+
+  return null;
+}
+
+async function fetchChartData(companyId, isConsolidated) {
   try {
-    // The peer table is in #peers-table-placeholder and loads dynamically
-    await page
-      .waitForSelector("#peers-table-placeholder table.data-table tbody tr", {
-        timeout: 10000,
-      })
-      .catch(() => null);
-
-    return await page.evaluate(() => {
-      // Table is inside the placeholder div, NOT directly in #peers
-      const table = document.querySelector(
-        "#peers-table-placeholder table.data-table"
-      );
-      if (!table) return { headings: [], peers: [], median: null };
-
-      // Headers are <th> elements in the FIRST <tr> of <tbody> (no <thead> here)
-      const headerRow = table.querySelector("tbody tr:first-child");
-      const headings = headerRow
-        ? Array.from(headerRow.querySelectorAll("th")).map((th) => {
-            // Use data-tooltip for friendly column name (e.g. "Current Price")
-            const tooltip = th.getAttribute("data-tooltip");
-            if (tooltip) return tooltip;
-            // Otherwise strip the unit span and return text
-            const clone = th.cloneNode(true);
-            clone.querySelector("span")?.remove();
-            return clone.textContent.trim();
-          }).filter((h) => h)
-        : [];
-
-      // Data rows: tbody rows that have <td> (skip the header row which has <th>)
-      const dataRows = Array.from(table.querySelectorAll("tbody tr")).filter(
-        (row) => row.querySelectorAll("td").length > 0
-      );
-
-      const peers = dataRows
-        .map((row) => {
-          const cells = Array.from(row.querySelectorAll("td"));
-          const obj = {};
-          headings.forEach((h, i) => {
-            const cell = cells[i];
-            if (!cell) return;
-            // For name column, get the link text (strips the serial number td)
-            const link = cell.querySelector("a");
-            obj[h] = link
-              ? link.textContent.trim()
-              : cell.textContent.trim();
-          });
-          return obj;
-        })
-        .filter((p) => Object.values(p).some((v) => v));
-
-      // Capture median row from <tfoot>
-      const medianRow = table.querySelector("tfoot tr");
-      let median = null;
-      if (medianRow) {
-        const cells = Array.from(medianRow.querySelectorAll("td"));
-        median = {};
-        headings.forEach((h, i) => {
-          median[h] = cells[i]?.textContent.trim() || "";
-        });
-      }
-
-      return { headings, peers, median };
+    const q = isConsolidated ? "consolidated=true" : "consolidated=false";
+    const url = `https://www.screener.in/api/company/${companyId}/chart/?q=Price&days=365&${q}`;
+    const { data } = await axios.get(url, {
+      headers: API_HEADERS,
+      timeout: 15000,
     });
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchPeerComparison(companyId) {
+  try {
+    const url = `https://www.screener.in/api/company/${companyId}/peers/`;
+    const { data: html } = await axios.get(url, {
+      headers: { ...API_HEADERS, Accept: "text/html, */*" },
+      timeout: 15000,
+      responseType: "text",
+    });
+
+    const $ = cheerio.load(html);
+    const table = $("table.data-table").first();
+    if (!table.length) return { headings: [], peers: [], median: null };
+
+    // Screener injects the table with headers in the first tbody <tr> (no <thead>)
+    const headerRow = table.find("tbody tr:first-child");
+    const headings = headerRow
+      .find("th")
+      .map((_, th) => {
+        const tooltip = $(th).attr("data-tooltip");
+        if (tooltip) return tooltip;
+        return $(th).text().replace(/\s+/g, " ").trim();
+      })
+      .get()
+      .filter((h) => h);
+
+    const peers = table
+      .find("tbody tr")
+      .filter((_, row) => $(row).find("td").length > 0)
+      .map((_, row) => {
+        const cells = $(row).find("td");
+        const obj = {};
+        headings.forEach((h, i) => {
+          const cell = cells.eq(i);
+          const link = cell.find("a");
+          obj[h] = link.length ? link.text().trim() : cell.text().trim();
+        });
+        return obj;
+      })
+      .get()
+      .filter((p) => Object.values(p).some((v) => v));
+
+    const medianRow = table.find("tfoot tr");
+    let median = null;
+    if (medianRow.length) {
+      const cells = medianRow.find("td");
+      median = {};
+      headings.forEach((h, i) => {
+        median[h] = cells.eq(i).text().trim() || "";
+      });
+    }
+
+    return { headings, peers, median };
   } catch {
     return { headings: [], peers: [], median: null };
   }
-};
+}
 
-const getDocumentLinks = async (page) => {
-  try {
-    return await page.evaluate(() => {
-      const section = document.getElementById("documents");
-      if (!section) return [];
+// ── HTML parsers (all sync, operate on a loaded cheerio $ instance) ────────────
 
-      const categorize = (title, url) => {
-        const t = title.toLowerCase();
-        if (t.includes("financial year") || t.includes("annual report"))
-          return "annual_report";
-        if (
-          t === "transcript" ||
-          t.includes("earnings call transcript") ||
-          t.includes("concall transcript") ||
-          t.includes("investor call transcript")
-        )
-          return "concall";
-        if (t.includes("audio recording") || t.includes("audio call"))
-          return "audio"; // skip these — no text to extract
-        if (
-          t === "all" ||
-          url.includes("/corp-announcements/") ||
-          t.includes("drhp") ||
-          t.includes("rating update") ||
-          t.includes("credit rating") ||
-          t.includes("rating reaffirm")
-        )
-          return "skip";
-        return "announcement";
+function getAboutText($) {
+  return $(".show-more-box.about > p").text().trim() || "";
+}
+
+function getRatios($) {
+  return $("#top-ratios li")
+    .map((_, el) => ({
+      name: $(el).find(".name").text().trim(),
+      value: $(el).find(".value .number").text().trim(),
+    }))
+    .get()
+    .filter((r) => r.name);
+}
+
+function getShareholding($) {
+  const table = $(
+    "#shareholding .responsive-holder .data-table"
+  ).first();
+  if (!table.length) return [];
+
+  const headers = table
+    .find("thead th:not(.text)")
+    .map((_, th) => $(th).text().trim())
+    .get();
+
+  return table
+    .find("tbody tr:not(.sub)")
+    .map((_, row) => {
+      const cells = $(row).find("td");
+      const rowData = { category: cells.eq(0).text().trim() || "" };
+      headers.forEach((col, i) => {
+        rowData[col] = cells.eq(i + 1).text().trim() || "";
+      });
+      return rowData;
+    })
+    .get()
+    .filter((r) => r.category);
+}
+
+function getQuartersData($) {
+  const section = $("#quarters");
+  const table = section.find("table.data-table").first();
+  if (!table.length) return { headings: [], values: [] };
+
+  const headings = table
+    .find("thead th")
+    .slice(1)
+    .map((_, th) => $(th).text().trim())
+    .get();
+
+  const values = table
+    .find("tbody tr")
+    .map((_, row) => {
+      const $row = $(row);
+      const category = $row.find("td.text").text().trim() || "";
+      const vals = $row
+        .find("td")
+        .slice(1)
+        .map((_, td) => $(td).text().trim())
+        .get();
+      return { category, values: vals };
+    })
+    .get()
+    .filter((r) => r.category);
+
+  return { headings, values };
+}
+
+function getProsConsData($) {
+  return {
+    pros: $(".pros li")
+      .map((_, li) => $(li).text().trim())
+      .get(),
+    cons: $(".cons li")
+      .map((_, li) => $(li).text().trim())
+      .get(),
+  };
+}
+
+function scrapeFinancialTable($, sectionId) {
+  const section = $(`#${sectionId}`);
+  const table = section.find("table.data-table").first();
+  if (!table.length) return { headings: [], values: [] };
+
+  const headings = table
+    .find("thead th")
+    .slice(1)
+    .map((_, th) => $(th).text().trim())
+    .get();
+
+  const values = table
+    .find("tbody tr")
+    .map((_, row) => {
+      const $row = $(row);
+      const category = $row
+        .find("td.text, td:first-child")
+        .first()
+        .text()
+        .trim();
+      const vals = $row
+        .find("td:not(:first-child)")
+        .map((_, td) => $(td).text().trim())
+        .get();
+      const isTtm = $row.hasClass("bold");
+      return { category, values: vals, isTtm };
+    })
+    .get()
+    .filter((r) => r.category && r.category !== "");
+
+  return { headings, values };
+}
+
+
+function getDocumentLinks($) {
+  const section = $("#documents");
+  if (!section.length) return [];
+
+  const categorize = (title, url) => {
+    const t = title.toLowerCase();
+    if (t.includes("financial year") || t.includes("annual report"))
+      return "annual_report";
+    if (
+      t === "transcript" ||
+      t.includes("earnings call transcript") ||
+      t.includes("concall transcript") ||
+      t.includes("investor call transcript")
+    )
+      return "concall";
+    if (t.includes("audio recording") || t.includes("audio call"))
+      return "audio";
+    if (
+      t === "all" ||
+      url.includes("/corp-announcements/") ||
+      t.includes("drhp") ||
+      t.includes("rating update") ||
+      t.includes("credit rating") ||
+      t.includes("rating reaffirm")
+    )
+      return "skip";
+    return "announcement";
+  };
+
+  const extractYear = (title) => {
+    const m = title.match(/\b(20\d{2})\b/);
+    return m ? parseInt(m[1]) : null;
+  };
+
+  const extractDate = (title) => {
+    const m = title.match(
+      /\b(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b/i
+    );
+    return m ? `${m[1]} ${m[2]}` : null;
+  };
+
+  return section
+    .find("a[href]")
+    .map((_, a) => {
+      const rawTitle = $(a).text() || "";
+      const title = rawTitle.replace(/\s+/g, " ").trim();
+      const href = $(a).attr("href") || "";
+      const url = href.startsWith("http")
+        ? href
+        : `https://www.screener.in${href}`;
+      if (!title || !url.startsWith("http")) return null;
+
+      const isPdf =
+        url.toLowerCase().endsWith(".pdf") ||
+        url.includes("corpfiling") ||
+        url.includes("AttachLive") ||
+        url.includes("AttachHis");
+      const category = categorize(title, url);
+      if (category === "skip" || category === "audio") return null;
+
+      return {
+        title,
+        url,
+        type: isPdf ? "pdf" : "link",
+        category,
+        year: extractYear(title),
+        date: extractDate(title),
       };
+    })
+    .get()
+    .filter(Boolean);
+}
 
-      const extractYear = (title) => {
-        const m = title.match(/\b(20\d{2})\b/);
-        return m ? parseInt(m[1]) : null;
-      };
-
-      const extractDate = (title) => {
-        const months =
-          /\b(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b/i;
-        const m = title.match(months);
-        return m ? `${m[1]} ${m[2]}` : null;
-      };
-
-      return Array.from(section.querySelectorAll("a[href]"))
-        .map((a) => {
-          // Clean up multi-line whitespace in titles
-          const rawTitle = a.textContent || "";
-          const title = rawTitle.replace(/\s+/g, " ").trim();
-          const url = a.href;
-          if (!title || !url.startsWith("http")) return null;
-
-          const isPdf = url.toLowerCase().endsWith(".pdf") ||
-            url.includes("corpfiling") || url.includes("AttachLive") || url.includes("AttachHis");
-          const category = categorize(title, url);
-          if (category === "skip" || category === "audio") return null;
-
-          return {
-            title,
-            url,
-            type: isPdf ? "pdf" : "link",
-            category,
-            year: extractYear(title),
-            date: extractDate(title),
-          };
-        })
-        .filter(Boolean);
-    });
-  } catch {
-    return [];
-  }
-};
+// ── Public API ─────────────────────────────────────────────────────────────────
 
 /**
- * Scrapes the screener.in company page for chart data and all financial tables.
- * @param {string} screenerLink - e.g. "/company/INFY/consolidated/"
- * @returns {object} Raw snapshot data
+ * Scrapes the screener.in company page (basic snapshot).
+ * Used by run_scraper.js → fetch_compact_snapshot in Python.
  */
 export const scrapeScreenerPage = async (screenerLink) => {
-  const browser = await launchBrowser();
-  const page = await browser.newPage();
-  await page.setRequestInterception(true);
+  const url = `https://www.screener.in${screenerLink}`;
+  process.stderr.write(`[screenerScraper] GET ${url}\n`);
 
-  let stockChartResponse = null;
-  let encodedSecret = "";
+  const html = await fetchHtml(url);
+  const $ = cheerio.load(html);
 
-  const BLOCKED_TYPES = new Set(["image", "media", "font", "stylesheet"]);
+  const isConsolidated = screenerLink.includes("/consolidated/");
+  const companyId = extractCompanyId($);
+  process.stderr.write(`[screenerScraper] company_id=${companyId || "not found"}\n`);
 
-  page.on("request", (req) => {
-    if (BLOCKED_TYPES.has(req.resourceType())) {
-      req.abort();
-      return;
-    }
-    const url = req.url();
-    if (!encodedSecret && url.includes("/chart/")) {
-      encodedSecret = Buffer.from(url).toString("base64");
-    }
-    req.continue();
-  });
-
-  page.on("response", async (res) => {
-    if (
-      res.url().includes("https://www.screener.in/api/company/") &&
-      res.url().includes("/chart/")
-    ) {
-      try {
-        stockChartResponse = await res.json();
-      } catch {
-        stockChartResponse = null;
-      }
-    }
-  });
-
-  try {
-    await page.goto(`https://screener.in${screenerLink}`, {
-      waitUntil: "domcontentloaded",
-      timeout: 60000,
-    });
-    // Wait for the key data sections to appear instead of a fixed pause
-    await page.waitForSelector("#top-ratios", { timeout: 30000 }).catch(() => {});
-
-    const [aboutText, ratios, shareholding, quartersData, prosConsData] =
-      await Promise.all([
-        getAboutText(page),
-        getRatios(page),
-        getShareholding(page),
-        getQuartersData(page),
-        getProsConsData(page),
-      ]);
-
-    return {
-      stockChartResponse,
-      aboutText,
-      ratios,
-      shareholding,
-      quartersData,
-      prosConsData,
-      encodedSecret,
-    };
-  } finally {
-    await browser.close();
-  }
-};
-
-/**
- * Full snapshot: scrapes screener.in + Google Finance for a given stock.
- * @param {string} screenerLink - e.g. "/company/INFY/consolidated/"
- * @returns {object} Combined raw snapshot
- */
-export const fetchStockSnapshot = async (screenerLink) => {
-  if (!String(screenerLink || "").includes("/company/")) {
-    throw new Error("Invalid screener URL path.");
-  }
-
-  const [screenData, indicesData] = await Promise.all([
-    scrapeScreenerPage(screenerLink),
-    getIndianIndices(screenerLink),
+  const [stockChartResponse, peerComparison] = await Promise.all([
+    companyId ? fetchChartData(companyId, isConsolidated) : Promise.resolve(null),
+    companyId ? fetchPeerComparison(companyId) : Promise.resolve({ headings: [], peers: [], median: null }),
   ]);
 
-  return { ...screenData, ...indicesData };
+  const encodedSecret = companyId
+    ? Buffer.from(
+        `https://www.screener.in/api/company/${companyId}/chart/?q=Price&days=365&consolidated=${isConsolidated}`
+      ).toString("base64")
+    : "";
+
+  const aboutText = getAboutText($);
+  const ratios = getRatios($);
+  const shareholding = getShareholding($);
+  const quartersData = getQuartersData($);
+  const prosConsData = getProsConsData($);
+
+  const log = (k, v) => process.stderr.write(`[scrape] ${k}: ${v}\n`);
+  log("aboutText", aboutText ? `${aboutText.slice(0, 80)}...` : "EMPTY");
+  log("ratios", `${ratios.length} items — first: ${ratios[0] ? `${ratios[0].name}=${ratios[0].value}` : "none"}`);
+  log("shareholding", `${shareholding.length} rows`);
+  log("quartersData", `${quartersData.headings.length} cols, ${quartersData.values.length} rows`);
+  log("prosConsData", `pros=${prosConsData.pros.length} cons=${prosConsData.cons.length}`);
+  log("peerComparison", `${peerComparison.peers.length} peers`);
+  log("chart", stockChartResponse ? `datasets=${stockChartResponse.datasets?.length ?? 0}` : "EMPTY");
+
+  return {
+    stockChartResponse,
+    aboutText,
+    ratios,
+    shareholding,
+    quartersData,
+    prosConsData,
+    peerComparison,
+    encodedSecret,
+  };
 };
 
 /**
- * Full deep scrape: gets ALL financial tabs from Screener in one browser session.
- * Returns: everything in fetchStockSnapshot PLUS annual P&L, balance sheet,
- * cash flows, 10Y ratio history, peer comparison, and document links.
- *
- * @param {string} screenerLink - e.g. "/company/TCS/consolidated/"
- * @returns {object} Full raw dataset
+ * Full deep scrape: all financial tabs, peers, documents.
+ * Used by run_full_scrape.js → get_or_fetch in Python.
  */
 export const fetchFullStockData = async (screenerLink) => {
   if (!String(screenerLink || "").includes("/company/")) {
     throw new Error("Invalid screener URL path.");
   }
 
-  const browser = await launchBrowser();
-  const page = await browser.newPage();
-  await page.setRequestInterception(true);
+  const url = `https://www.screener.in${screenerLink}`;
+  process.stderr.write(`[screenerScraper] Full scrape GET ${url}\n`);
 
-  let stockChartResponse = null;
-  let encodedSecret = "";
+  const html = await fetchHtml(url);
+  const $ = cheerio.load(html);
 
-  const BLOCKED_TYPES_FULL = new Set(["image", "media", "font", "stylesheet"]);
+  const isConsolidated = screenerLink.includes("/consolidated/");
+  const companyId = extractCompanyId($);
+  process.stderr.write(`[screenerScraper] company_id=${companyId || "not found"}\n`);
 
-  page.on("request", (req) => {
-    if (BLOCKED_TYPES_FULL.has(req.resourceType())) {
-      req.abort();
-      return;
-    }
-    const url = req.url();
-    if (!encodedSecret && url.includes("/chart/")) {
-      encodedSecret = Buffer.from(url).toString("base64");
-    }
-    req.continue();
-  });
+  const [stockChartResponse, peerComparison] = await Promise.all([
+    companyId ? fetchChartData(companyId, isConsolidated) : Promise.resolve(null),
+    companyId ? fetchPeerComparison(companyId) : Promise.resolve({ headings: [], peers: [], median: null }),
+  ]);
 
-  page.on("response", async (res) => {
-    if (
-      res.url().includes("https://www.screener.in/api/company/") &&
-      res.url().includes("/chart/")
-    ) {
-      try {
-        stockChartResponse = await res.json();
-      } catch {
-        stockChartResponse = null;
-      }
-    }
-  });
+  const encodedSecret = companyId
+    ? Buffer.from(
+        `https://www.screener.in/api/company/${companyId}/chart/?q=Price&days=365&consolidated=${isConsolidated}`
+      ).toString("base64")
+    : "";
 
-  try {
-    await page.goto(`https://screener.in${screenerLink}`, {
-      waitUntil: "domcontentloaded",
-      timeout: 60000,
-    });
-    await page.waitForSelector("#top-ratios", { timeout: 30000 }).catch(() => {});
+  const aboutText = getAboutText($);
+  const ratios = getRatios($);
+  const shareholding = getShareholding($);
+  const quartersData = getQuartersData($);
+  const prosConsData = getProsConsData($);
+  const annualPL = scrapeFinancialTable($, "profit-loss");
+  const balanceSheet = scrapeFinancialTable($, "balance-sheet");
+  const cashFlows = scrapeFinancialTable($, "cash-flow");
+  const ratiosHistory = scrapeFinancialTable($, "ratios");
+  const documents = getDocumentLinks($);
 
-    // Scrape all sections in parallel — they're all on the same loaded page
-    const [
-      aboutText,
-      ratios,
-      shareholding,
-      quartersData,
-      prosConsData,
-      annualPL,
-      balanceSheet,
-      cashFlows,
-      ratiosHistory,
-      peerComparison,
-      documents,
-    ] = await Promise.all([
-      getAboutText(page),
-      getRatios(page),
-      getShareholding(page),
-      getQuartersData(page),
-      getProsConsData(page),
-      scrapeFinancialTable(page, "profit-loss"),
-      scrapeFinancialTable(page, "balance-sheet"),
-      scrapeFinancialTable(page, "cash-flow"),
-      scrapeFinancialTable(page, "ratios"),
-      getPeerComparison(page),
-      getDocumentLinks(page),
-    ]);
+  const log = (k, v) => process.stderr.write(`[scrape] ${k}: ${v}\n`);
+  log("aboutText", aboutText ? `${aboutText.slice(0, 80)}...` : "EMPTY");
+  log("ratios", `${ratios.length} items — first: ${ratios[0] ? `${ratios[0].name}=${ratios[0].value}` : "none"}`);
+  log("shareholding", `${shareholding.length} rows`);
+  log("quartersData", `${quartersData.headings.length} cols, ${quartersData.values.length} rows`);
+  log("prosConsData", `pros=${prosConsData.pros.length} cons=${prosConsData.cons.length}`);
+  log("annualPL", `${annualPL.headings.length} cols, ${annualPL.values.length} rows`);
+  log("balanceSheet", `${balanceSheet.headings.length} cols, ${balanceSheet.values.length} rows`);
+  log("cashFlows", `${cashFlows.headings.length} cols, ${cashFlows.values.length} rows`);
+  log("ratiosHistory", `${ratiosHistory.headings.length} cols, ${ratiosHistory.values.length} rows`);
+  log("peerComparison", `${peerComparison.peers.length} peers`);
+  log("documents", `${documents.length} docs (concalls=${documents.filter(d => d.category === "concall").length})`);
+  log("chart", stockChartResponse ? `datasets=${stockChartResponse.datasets?.length ?? 0}` : "EMPTY");
 
-    return {
-      stockChartResponse,
-      encodedSecret,
-      aboutText,
-      ratios,
-      shareholding,
-      quartersData,
-      prosConsData,
-      annualPL,
-      balanceSheet,
-      cashFlows,
-      ratiosHistory,
-      peerComparison,
-      documents,
-      scrapedAt: new Date().toISOString(),
-    };
-  } finally {
-    await browser.close();
+  return {
+    stockChartResponse,
+    encodedSecret,
+    aboutText,
+    ratios,
+    shareholding,
+    quartersData,
+    prosConsData,
+    annualPL,
+    balanceSheet,
+    cashFlows,
+    ratiosHistory,
+    peerComparison,
+    documents,
+    scrapedAt: new Date().toISOString(),
+  };
+};
+
+/**
+ * Compact snapshot (used by run_scraper.js for the analyze pipeline).
+ */
+export const fetchStockSnapshot = async (screenerLink) => {
+  if (!String(screenerLink || "").includes("/company/")) {
+    throw new Error("Invalid screener URL path.");
   }
+  return scrapeScreenerPage(screenerLink);
 };
