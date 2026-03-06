@@ -41,6 +41,27 @@ def create_app() -> Flask:
     app.register_blueprint(jobs_bp, url_prefix="/api")
     app.register_blueprint(admin_bp, url_prefix="/api")
 
+    # Mark any jobs left as "running" from a previous process as failed.
+    # Background threads die when Gunicorn restarts; without this they stay
+    # stuck in "running" forever and the frontend polls indefinitely.
+    try:
+        from api.db import _conn
+        with _conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE jobs SET status = 'failed',
+                        error_message = 'Server restarted — job was lost',
+                        finished_at = NOW()
+                    WHERE status IN ('running', 'queued')
+                    """
+                )
+                count = cur.rowcount
+        if count:
+            log.warning(f"Marked {count} orphaned job(s) as failed on startup")
+    except Exception as e:
+        log.warning(f"Could not clean up orphaned jobs on startup: {e}")
+
     log.info("Flask app created", extra={"blueprints": "jobs,admin"})
 
     @app.get("/health")
