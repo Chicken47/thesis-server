@@ -32,6 +32,11 @@ def _get_pool() -> psycopg2.pool.ThreadedConnectionPool:
             maxconn=10,
             dsn=dsn,
             cursor_factory=psycopg2.extras.RealDictCursor,
+            # Keep connections alive so Neon doesn't drop them during long scrapes
+            keepalives=1,
+            keepalives_idle=30,
+            keepalives_interval=5,
+            keepalives_count=5,
         )
         log.debug("Neon connection pool initialised")
     return _pool
@@ -42,14 +47,24 @@ def _conn():
     """Get a connection from the pool, commit on success, rollback on error."""
     pool = _get_pool()
     conn = pool.getconn()
+    # Replace stale connections (Neon may drop idle connections server-side)
+    if conn.closed:
+        pool.putconn(conn, close=True)
+        conn = pool.getconn()
     try:
         yield conn
         conn.commit()
     except Exception:
-        conn.rollback()
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         raise
     finally:
-        pool.putconn(conn)
+        try:
+            pool.putconn(conn)
+        except Exception:
+            pass
 
 
 def _serialize(v: Any) -> Any:
