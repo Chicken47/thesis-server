@@ -44,13 +44,30 @@ def _get_pool() -> psycopg2.pool.ThreadedConnectionPool:
 
 @contextmanager
 def _conn():
-    """Get a connection from the pool, commit on success, rollback on error."""
+    """Get a connection from the pool, commit on success, rollback on error.
+
+    Pings the connection with SELECT 1 before yielding — this proactively
+    detects stale SSL connections that Neon drops server-side (conn.closed
+    is still 0 until you actually try to use the socket).
+    """
     pool = _get_pool()
     conn = pool.getconn()
-    # Replace stale connections (Neon may drop idle connections server-side)
+
+    # Replace if psycopg2 already knows it's dead
     if conn.closed:
         pool.putconn(conn, close=True)
         conn = pool.getconn()
+
+    # Ping to catch SSL-dropped connections before the real query
+    try:
+        conn.cursor().execute("SELECT 1")
+    except (psycopg2.OperationalError, psycopg2.InterfaceError):
+        try:
+            pool.putconn(conn, close=True)
+        except Exception:
+            pass
+        conn = pool.getconn()  # fresh connection from pool
+
     try:
         yield conn
         conn.commit()
