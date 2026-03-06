@@ -11,7 +11,7 @@ SCRAPER_SCRIPT = os.path.join(os.path.dirname(__file__), "scraper", "run_scraper
 PROJECT_ROOT = os.path.dirname(__file__)
 
 
-def fetch_compact_snapshot(screener_path: str, timeout: int = 60) -> dict:
+def fetch_compact_snapshot(screener_path: str, timeout: int = 300) -> dict:
     """
     Call the Node.js scraper for a given Screener path.
 

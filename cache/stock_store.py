@@ -178,7 +178,7 @@ def fetch_and_cache(ticker: str, screener_path: str, verbose: bool = True) -> di
         ["node", str(SCRAPER_SCRIPT), screener_path],
         capture_output=True,
         text=True,
-        timeout=180,  # 3 min — full scrape takes longer than compact
+        timeout=300,  # 3 min — full scrape takes longer than compact
         cwd=str(Path(__file__).parent.parent),
     )
 
