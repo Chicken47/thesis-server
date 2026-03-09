@@ -97,6 +97,17 @@ def analyze_stock(stock_symbol: str, snapshot: dict, verbose: bool = True) -> di
         if verbose:
             print(f"[Pipeline] Could not save prompt: {_e}")
 
+    # Update checklist with RAG status and the generated prompt
+    try:
+        from api.db import update_checklist_rag_and_prompt
+        rag_ok = not rag_context.startswith("(RAG unavailable")
+        update_checklist_rag_and_prompt(stock_symbol, rag_ok, prompt)
+        if verbose:
+            print(f"[Pipeline] Checklist updated  (rag_successful={rag_ok})")
+    except Exception as _e:
+        if verbose:
+            print(f"[Pipeline] Could not update checklist: {_e}")
+
     # Step 5: Call Claude API with extended thinking
     if verbose:
         print(f"\n[Pipeline] Sending to {ANTHROPIC_MODEL}")

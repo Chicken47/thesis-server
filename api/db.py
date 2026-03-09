@@ -451,3 +451,88 @@ def save_full_screener_data(ticker: str, raw: dict) -> None:
                 (upper, len(rows_to_insert)),
             )
     log.debug("scrape_log inserted", extra={"ticker": upper})
+
+    # ── 7. Stock checklist ────────────────────────────────────────────────────
+    upsert_checklist_from_raw(ticker, raw)
+
+
+# ── Stock Checklist ────────────────────────────────────────────────────────────
+
+def upsert_checklist_from_raw(ticker: str, raw: dict) -> None:
+    """Populate stock_checklist boolean flags from a raw screener scrape."""
+    upper = ticker.upper()
+
+    def _has_table(key: str) -> bool:
+        t = raw.get(key) or {}
+        return bool(t.get('headings'))
+
+    docs = raw.get('documents', [])
+    doc_cats = {d.get('category') for d in docs}
+
+    with _conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO stock_checklist (
+                    stock_symbol,
+                    has_pnl, has_quarterly, has_balance_sheet, has_cash_flow,
+                    has_shareholding, has_ratios, has_peers,
+                    has_news, has_concalls, has_announcements, has_annual_reports,
+                    screener_scraped_at, updated_at
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
+                ON CONFLICT (stock_symbol) DO UPDATE SET
+                    has_pnl             = EXCLUDED.has_pnl,
+                    has_quarterly       = EXCLUDED.has_quarterly,
+                    has_balance_sheet   = EXCLUDED.has_balance_sheet,
+                    has_cash_flow       = EXCLUDED.has_cash_flow,
+                    has_shareholding    = EXCLUDED.has_shareholding,
+                    has_ratios          = EXCLUDED.has_ratios,
+                    has_peers           = EXCLUDED.has_peers,
+                    has_news            = EXCLUDED.has_news,
+                    has_concalls        = EXCLUDED.has_concalls,
+                    has_announcements   = EXCLUDED.has_announcements,
+                    has_annual_reports  = EXCLUDED.has_annual_reports,
+                    screener_scraped_at = EXCLUDED.screener_scraped_at,
+                    updated_at          = EXCLUDED.updated_at
+                """,
+                (
+                    upper,
+                    _has_table('annualPL'),
+                    bool((raw.get('quartersData') or {}).get('headings')),
+                    _has_table('balanceSheet'),
+                    _has_table('cashFlows'),
+                    bool(raw.get('shareholding')),
+                    _has_table('ratiosHistory'),
+                    bool((raw.get('peerComparison') or {}).get('peers')),
+                    bool(raw.get('news')),
+                    'concall' in doc_cats,
+                    'announcement' in doc_cats,
+                    'annual_report' in doc_cats,
+                ),
+            )
+    log.debug("stock_checklist upserted from raw", extra={"ticker": upper})
+
+
+def update_checklist_rag_and_prompt(ticker: str, rag_successful: bool, prompt: str | None = None) -> None:
+    """Update RAG status and store the generated prompt in stock_checklist."""
+    upper = ticker.upper()
+    with _conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO stock_checklist (
+                    stock_symbol, rag_successful, latest_prompt, prompt_generated_at, updated_at
+                ) VALUES (%s, %s, %s, NOW(), NOW())
+                ON CONFLICT (stock_symbol) DO UPDATE SET
+                    rag_successful      = EXCLUDED.rag_successful,
+                    latest_prompt       = COALESCE(EXCLUDED.latest_prompt, stock_checklist.latest_prompt),
+                    prompt_generated_at = CASE
+                        WHEN EXCLUDED.latest_prompt IS NOT NULL
+                        THEN EXCLUDED.prompt_generated_at
+                        ELSE stock_checklist.prompt_generated_at
+                    END,
+                    updated_at          = EXCLUDED.updated_at
+                """,
+                (upper, rag_successful, prompt),
+            )
+    log.debug("stock_checklist rag/prompt updated", extra={"ticker": upper})

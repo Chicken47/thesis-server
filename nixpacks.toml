@@ -1,0 +1,11 @@
+[phases.setup]
+nixPkgs = ["python313", "nodejs_22"]
+
+[phases.install]
+cmds = [
+  "pip install -r requirements.txt",
+  "cd scraper && npm install"
+]
+
+[start]
+cmd = "gunicorn wsgi:app --workers 2 --timeout 300 --bind 0.0.0.0:$PORT"
