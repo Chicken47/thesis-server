@@ -1,0 +1,44 @@
+# ── Python ────────────────────────────────────────────────────────────────────
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# ── Large local data (ephemeral on server anyway) ─────────────────────────────
+stock_cache/
+data/
+chroma_db/
+output/
+
+# ── Frontend (deployed separately to Vercel) ──────────────────────────────────
+thesis-web-client/
+
+# ── Node ──────────────────────────────────────────────────────────────────────
+scraper/node_modules/
+node_modules/
+scraper/.cache/
+.puppeteer/
+
+# ── Secrets ───────────────────────────────────────────────────────────────────
+.env
+*.env.local
+
+# ── Git / IDE ─────────────────────────────────────────────────────────────────
+.git/
+.gitignore
+.vscode/
+.idea/
+.DS_Store
+.claude/
+.mcp.json
+
+# ── Media / generated ─────────────────────────────────────────────────────────
+*.png
+*.jpg
+*.jpeg
+*.pdf
+*.log
+
+# ── Dev scripts ───────────────────────────────────────────────────────────────
+scripts/
