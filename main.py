@@ -13,6 +13,7 @@ Usage:
 
   # Rebuild index and analyze
   python main.py --build-index --analyze /company/TCS/consolidated/
+  //Dummy
 """
 
 import argparse
