@@ -35,7 +35,7 @@ EXPOSE 5000
 
 # Use shell form so $PORT is expanded at runtime (Railway sets PORT dynamically)
 CMD gunicorn wsgi:app \
-    --workers 2 \
+    --workers 1 \
     --timeout 300 \
     --bind "0.0.0.0:${PORT:-5000}" \
     --access-logfile - \
