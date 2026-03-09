@@ -14,8 +14,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# ── Python dependencies (own layer — invalidates only when requirements change) ─
+# ── Python dependencies ───────────────────────────────────────────────────────
 COPY requirements.txt .
+# Install CPU-only torch first (~200MB) so sentence-transformers doesn't pull
+# the 2.5GB CUDA build. Must be a separate step so pip sees it as satisfied.
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
 RUN pip install --no-cache-dir -r requirements.txt
 
 # ── Node.js dependencies ──────────────────────────────────────────────────────
