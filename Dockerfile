@@ -1,9 +1,13 @@
 FROM python:3.13-slim
 
-# ── System: Node.js 22 ────────────────────────────────────────────────────────
+# ── System: build tools + Node.js 22 ─────────────────────────────────────────
+# build-essential + cmake needed to compile chroma-hnswlib (C++ extension)
 RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
         ca-certificates \
+        build-essential \
+        cmake \
+        python3-dev \
     && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
