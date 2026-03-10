@@ -28,7 +28,7 @@ const API_HEADERS = {
 async function fetchHtml(url) {
   const { data } = await axios.get(url, {
     headers: PAGE_HEADERS,
-    timeout: 30000,
+    timeout: 10000,
     responseType: "text",
   });
   return data;
@@ -50,7 +50,10 @@ function extractCompanyIds($) {
         const m =
           text.match(/"company_id"\s*:\s*(\d+)/) ||
           text.match(/company\.id\s*=\s*(\d+)/);
-        if (m) { id = m[1]; return false; }
+        if (m) {
+          id = m[1];
+          return false;
+        }
       });
       return id;
     })();
@@ -80,7 +83,10 @@ function extractCompanyId($) {
   $("script").each((_, el) => {
     const text = $(el).html() || "";
     const m = text.match(/\/api\/company\/(\d+)\//);
-    if (m) { id = m[1]; return false; }
+    if (m) {
+      id = m[1];
+      return false;
+    }
   });
   if (id) return id;
 
@@ -90,7 +96,10 @@ function extractCompanyId($) {
     const m =
       text.match(/"company_id"\s*:\s*(\d+)/) ||
       text.match(/company\.id\s*=\s*(\d+)/);
-    if (m) { id = m[1]; return false; }
+    if (m) {
+      id = m[1];
+      return false;
+    }
   });
   if (id) return id;
 
@@ -98,7 +107,10 @@ function extractCompanyId($) {
   $("script").each((_, el) => {
     const text = $(el).html() || "";
     const m = text.match(/\bvar\s+id\s*=\s*['"']?(\d+)['"']?/);
-    if (m) { id = m[1]; return false; }
+    if (m) {
+      id = m[1];
+      return false;
+    }
   });
   return id;
 }
@@ -121,7 +133,9 @@ async function fetchChartData(companyId, isConsolidated) {
 // ticker: the company symbol/BSE code from the screener path (e.g. "522195" or "INFY")
 //         used to identify which row is the current company via its href.
 function parsePeerTable($, context, ticker) {
-  const table = context ? context.find("table.data-table").first() : $("table.data-table").first();
+  const table = context
+    ? context.find("table.data-table").first()
+    : $("table.data-table").first();
   if (!table.length) return { headings: [], peers: [], median: null };
 
   // Headers are in the first tbody <tr> using <th> elements
@@ -136,8 +150,8 @@ function parsePeerTable($, context, ticker) {
     .get()
     .filter((h) => h);
 
-  const nameIdx = headings.findIndex((h) =>
-    h.toLowerCase() === "name" || h.toLowerCase() === "company"
+  const nameIdx = headings.findIndex(
+    (h) => h.toLowerCase() === "name" || h.toLowerCase() === "company"
   );
 
   // Normalise ticker for href matching: "/company/522195/" or "/company/INFY/"
@@ -156,7 +170,9 @@ function parsePeerTable($, context, ticker) {
       });
       // Identify the current company by its href containing the ticker
       if (nameIdx >= 0 && tickerLower) {
-        const href = (cells.eq(nameIdx).find("a").attr("href") || "").toLowerCase();
+        const href = (
+          cells.eq(nameIdx).find("a").attr("href") || ""
+        ).toLowerCase();
         obj._isSelf = href.includes(`/company/${tickerLower}/`);
       }
       return obj;
@@ -209,9 +225,7 @@ function getRatios($) {
 }
 
 function getShareholding($) {
-  const table = $(
-    "#shareholding .responsive-holder .data-table"
-  ).first();
+  const table = $("#shareholding .responsive-holder .data-table").first();
   if (!table.length) return [];
 
   const headers = table
@@ -225,7 +239,11 @@ function getShareholding($) {
       const cells = $(row).find("td");
       const rowData = { category: cells.eq(0).text().trim() || "" };
       headers.forEach((col, i) => {
-        rowData[col] = cells.eq(i + 1).text().trim() || "";
+        rowData[col] =
+          cells
+            .eq(i + 1)
+            .text()
+            .trim() || "";
       });
       return rowData;
     })
@@ -305,7 +323,6 @@ function scrapeFinancialTable($, sectionId) {
 
   return { headings, values };
 }
-
 
 function getDocumentLinks($) {
   const section = $("#documents");
@@ -395,11 +412,22 @@ export const scrapeScreenerPage = async (screenerLink) => {
 
   const isConsolidated = screenerLink.includes("/consolidated/");
   const { companyId, warehouseId } = extractCompanyIds($);
-  process.stderr.write(`[screenerScraper] company_id=${companyId || "not found"} warehouse_id=${warehouseId || "not found"}\n`);
+  process.stderr.write(
+    `[screenerScraper] company_id=${companyId || "not found"} warehouse_id=${
+      warehouseId || "not found"
+    }\n`
+  );
 
   const [stockChartResponse, peerComparison] = await Promise.all([
-    companyId ? fetchChartData(companyId, isConsolidated) : Promise.resolve(null),
-    warehouseId ? fetchPeerComparison(warehouseId, screenerLink.split("/company/")[1]?.split("/")[0]) : Promise.resolve({ headings: [], peers: [], median: null }),
+    companyId
+      ? fetchChartData(companyId, isConsolidated)
+      : Promise.resolve(null),
+    warehouseId
+      ? fetchPeerComparison(
+          warehouseId,
+          screenerLink.split("/company/")[1]?.split("/")[0]
+        )
+      : Promise.resolve({ headings: [], peers: [], median: null }),
   ]);
 
   const encodedSecret = companyId
@@ -416,12 +444,31 @@ export const scrapeScreenerPage = async (screenerLink) => {
 
   const log = (k, v) => process.stderr.write(`[scrape] ${k}: ${v}\n`);
   log("aboutText", aboutText ? `${aboutText.slice(0, 80)}...` : "EMPTY");
-  log("ratios", `${ratios.length} items — first: ${ratios[0] ? `${ratios[0].name}=${ratios[0].value}` : "none"}`);
+  log(
+    "ratios",
+    `${ratios.length} items — first: ${
+      ratios[0] ? `${ratios[0].name}=${ratios[0].value}` : "none"
+    }`
+  );
   log("shareholding", `${shareholding.length} rows`);
-  log("quartersData", `${quartersData.headings.length} cols, ${quartersData.values.length} rows`);
-  log("prosConsData", `pros=${prosConsData.pros.length} cons=${prosConsData.cons.length}`);
-  log("peerComparison", `${peerComparison.peers.length} peers via warehouseId=${warehouseId}`);
-  log("chart", stockChartResponse ? `datasets=${stockChartResponse.datasets?.length ?? 0}` : "EMPTY");
+  log(
+    "quartersData",
+    `${quartersData.headings.length} cols, ${quartersData.values.length} rows`
+  );
+  log(
+    "prosConsData",
+    `pros=${prosConsData.pros.length} cons=${prosConsData.cons.length}`
+  );
+  log(
+    "peerComparison",
+    `${peerComparison.peers.length} peers via warehouseId=${warehouseId}`
+  );
+  log(
+    "chart",
+    stockChartResponse
+      ? `datasets=${stockChartResponse.datasets?.length ?? 0}`
+      : "EMPTY"
+  );
 
   return {
     stockChartResponse,
@@ -452,11 +499,22 @@ export const fetchFullStockData = async (screenerLink) => {
 
   const isConsolidated = screenerLink.includes("/consolidated/");
   const { companyId, warehouseId } = extractCompanyIds($);
-  process.stderr.write(`[screenerScraper] company_id=${companyId || "not found"} warehouse_id=${warehouseId || "not found"}\n`);
+  process.stderr.write(
+    `[screenerScraper] company_id=${companyId || "not found"} warehouse_id=${
+      warehouseId || "not found"
+    }\n`
+  );
 
   const [stockChartResponse, peerComparison] = await Promise.all([
-    companyId ? fetchChartData(companyId, isConsolidated) : Promise.resolve(null),
-    warehouseId ? fetchPeerComparison(warehouseId, screenerLink.split("/company/")[1]?.split("/")[0]) : Promise.resolve({ headings: [], peers: [], median: null }),
+    companyId
+      ? fetchChartData(companyId, isConsolidated)
+      : Promise.resolve(null),
+    warehouseId
+      ? fetchPeerComparison(
+          warehouseId,
+          screenerLink.split("/company/")[1]?.split("/")[0]
+        )
+      : Promise.resolve({ headings: [], peers: [], median: null }),
   ]);
 
   const encodedSecret = companyId
@@ -478,17 +536,53 @@ export const fetchFullStockData = async (screenerLink) => {
 
   const log = (k, v) => process.stderr.write(`[scrape] ${k}: ${v}\n`);
   log("aboutText", aboutText ? `${aboutText.slice(0, 80)}...` : "EMPTY");
-  log("ratios", `${ratios.length} items — first: ${ratios[0] ? `${ratios[0].name}=${ratios[0].value}` : "none"}`);
+  log(
+    "ratios",
+    `${ratios.length} items — first: ${
+      ratios[0] ? `${ratios[0].name}=${ratios[0].value}` : "none"
+    }`
+  );
   log("shareholding", `${shareholding.length} rows`);
-  log("quartersData", `${quartersData.headings.length} cols, ${quartersData.values.length} rows`);
-  log("prosConsData", `pros=${prosConsData.pros.length} cons=${prosConsData.cons.length}`);
-  log("annualPL", `${annualPL.headings.length} cols, ${annualPL.values.length} rows`);
-  log("balanceSheet", `${balanceSheet.headings.length} cols, ${balanceSheet.values.length} rows`);
-  log("cashFlows", `${cashFlows.headings.length} cols, ${cashFlows.values.length} rows`);
-  log("ratiosHistory", `${ratiosHistory.headings.length} cols, ${ratiosHistory.values.length} rows`);
-  log("peerComparison", `${peerComparison.peers.length} peers via warehouseId=${warehouseId}`);
-  log("documents", `${documents.length} docs (concalls=${documents.filter(d => d.category === "concall").length})`);
-  log("chart", stockChartResponse ? `datasets=${stockChartResponse.datasets?.length ?? 0}` : "EMPTY");
+  log(
+    "quartersData",
+    `${quartersData.headings.length} cols, ${quartersData.values.length} rows`
+  );
+  log(
+    "prosConsData",
+    `pros=${prosConsData.pros.length} cons=${prosConsData.cons.length}`
+  );
+  log(
+    "annualPL",
+    `${annualPL.headings.length} cols, ${annualPL.values.length} rows`
+  );
+  log(
+    "balanceSheet",
+    `${balanceSheet.headings.length} cols, ${balanceSheet.values.length} rows`
+  );
+  log(
+    "cashFlows",
+    `${cashFlows.headings.length} cols, ${cashFlows.values.length} rows`
+  );
+  log(
+    "ratiosHistory",
+    `${ratiosHistory.headings.length} cols, ${ratiosHistory.values.length} rows`
+  );
+  log(
+    "peerComparison",
+    `${peerComparison.peers.length} peers via warehouseId=${warehouseId}`
+  );
+  log(
+    "documents",
+    `${documents.length} docs (concalls=${
+      documents.filter((d) => d.category === "concall").length
+    })`
+  );
+  log(
+    "chart",
+    stockChartResponse
+      ? `datasets=${stockChartResponse.datasets?.length ?? 0}`
+      : "EMPTY"
+  );
 
   return {
     stockChartResponse,
