@@ -35,33 +35,72 @@ async function fetchHtml(url) {
 }
 
 /** Extract Screener's internal company numeric ID from embedded HTML */
+// Returns { companyId, warehouseId }
+// companyId   → used for chart API  (/api/company/{id}/chart/)
+// warehouseId → used for peers API  (/api/company/{id}/peers/)
+function extractCompanyIds($) {
+  const companyId =
+    $("[data-company_id]").attr("data-company_id") ||
+    $("[data-company-id]").attr("data-company-id") ||
+    $('meta[name="company_id"]').attr("content") ||
+    (() => {
+      let id = null;
+      $("script").each((_, el) => {
+        const text = $(el).html() || "";
+        const m =
+          text.match(/"company_id"\s*:\s*(\d+)/) ||
+          text.match(/company\.id\s*=\s*(\d+)/);
+        if (m) { id = m[1]; return false; }
+      });
+      return id;
+    })();
+
+  const warehouseId =
+    $("[data-warehouse-id]").attr("data-warehouse-id") ||
+    $("[data-warehouse_id]").attr("data-warehouse_id") ||
+    companyId; // fallback to companyId if warehouseId not found
+
+  return { companyId, warehouseId };
+}
+
+// Keep old name as thin wrapper for chart use
 function extractCompanyId($) {
-  // 1. data attribute on chart container
   const fromAttr =
     $("[data-company_id]").attr("data-company_id") ||
     $("[data-company-id]").attr("data-company-id");
   if (fromAttr) return fromAttr;
 
-  // 2. Script tag: var id = 12345  or  id: 12345
-  let id = null;
-  $("script").each((_, el) => {
-    const text = $(el).html() || "";
-    const m =
-      text.match(/\bvar\s+id\s*=\s*['"']?(\d+)['"']?/) ||
-      text.match(/"company_id"\s*:\s*(\d+)/) ||
-      text.match(/company\.id\s*=\s*(\d+)/);
-    if (m) {
-      id = m[1];
-      return false;
-    }
-  });
-  if (id) return id;
-
-  // 3. Meta tag
+  // 2. Meta tag
   const meta = $('meta[name="company_id"]').attr("content");
   if (meta) return meta;
 
-  return null;
+  // 3. Screener API URL pattern in scripts — unambiguous, always correct company
+  //    e.g. /api/company/12345/chart/ or /api/company/12345/peers/
+  let id = null;
+  $("script").each((_, el) => {
+    const text = $(el).html() || "";
+    const m = text.match(/\/api\/company\/(\d+)\//);
+    if (m) { id = m[1]; return false; }
+  });
+  if (id) return id;
+
+  // 4. Screener-specific JSON patterns
+  $("script").each((_, el) => {
+    const text = $(el).html() || "";
+    const m =
+      text.match(/"company_id"\s*:\s*(\d+)/) ||
+      text.match(/company\.id\s*=\s*(\d+)/);
+    if (m) { id = m[1]; return false; }
+  });
+  if (id) return id;
+
+  // 5. Last resort: bare `var id = N` — can falsely match analytics/GTM scripts
+  $("script").each((_, el) => {
+    const text = $(el).html() || "";
+    const m = text.match(/\bvar\s+id\s*=\s*['"']?(\d+)['"']?/);
+    if (m) { id = m[1]; return false; }
+  });
+  return id;
 }
 
 async function fetchChartData(companyId, isConsolidated) {
@@ -78,58 +117,76 @@ async function fetchChartData(companyId, isConsolidated) {
   }
 }
 
-async function fetchPeerComparison(companyId) {
+// Parse peer comparison table directly from the main company page HTML.
+// ticker: the company symbol/BSE code from the screener path (e.g. "522195" or "INFY")
+//         used to identify which row is the current company via its href.
+function parsePeerTable($, context, ticker) {
+  const table = context ? context.find("table.data-table").first() : $("table.data-table").first();
+  if (!table.length) return { headings: [], peers: [], median: null };
+
+  // Headers are in the first tbody <tr> using <th> elements
+  const headerRow = table.find("tbody tr:first-child");
+  const headings = headerRow
+    .find("th")
+    .map((_, th) => {
+      const tooltip = $(th).attr("data-tooltip");
+      if (tooltip) return tooltip;
+      return $(th).text().replace(/\s+/g, " ").trim();
+    })
+    .get()
+    .filter((h) => h);
+
+  const nameIdx = headings.findIndex((h) =>
+    h.toLowerCase() === "name" || h.toLowerCase() === "company"
+  );
+
+  // Normalise ticker for href matching: "/company/522195/" or "/company/INFY/"
+  const tickerLower = (ticker || "").toLowerCase();
+
+  const peers = table
+    .find("tbody tr")
+    .filter((_, row) => $(row).find("td").length > 0)
+    .map((_, row) => {
+      const cells = $(row).find("td");
+      const obj = {};
+      headings.forEach((h, i) => {
+        const cell = cells.eq(i);
+        const link = cell.find("a");
+        obj[h] = link.length ? link.text().trim() : cell.text().trim();
+      });
+      // Identify the current company by its href containing the ticker
+      if (nameIdx >= 0 && tickerLower) {
+        const href = (cells.eq(nameIdx).find("a").attr("href") || "").toLowerCase();
+        obj._isSelf = href.includes(`/company/${tickerLower}/`);
+      }
+      return obj;
+    })
+    .get()
+    .filter((p) => Object.values(p).some((v) => v));
+
+  const medianRow = table.find("tfoot tr");
+  let median = null;
+  if (medianRow.length) {
+    const cells = medianRow.find("td");
+    median = {};
+    headings.forEach((h, i) => {
+      median[h] = cells.eq(i).text().trim() || "";
+    });
+  }
+
+  return { headings, peers, median };
+}
+
+async function fetchPeerComparison(warehouseId, ticker) {
   try {
-    const url = `https://www.screener.in/api/company/${companyId}/peers/`;
+    const url = `https://www.screener.in/api/company/${warehouseId}/peers/`;
     const { data: html } = await axios.get(url, {
       headers: { ...API_HEADERS, Accept: "text/html, */*" },
       timeout: 15000,
       responseType: "text",
     });
-
     const $ = cheerio.load(html);
-    const table = $("table.data-table").first();
-    if (!table.length) return { headings: [], peers: [], median: null };
-
-    // Screener injects the table with headers in the first tbody <tr> (no <thead>)
-    const headerRow = table.find("tbody tr:first-child");
-    const headings = headerRow
-      .find("th")
-      .map((_, th) => {
-        const tooltip = $(th).attr("data-tooltip");
-        if (tooltip) return tooltip;
-        return $(th).text().replace(/\s+/g, " ").trim();
-      })
-      .get()
-      .filter((h) => h);
-
-    const peers = table
-      .find("tbody tr")
-      .filter((_, row) => $(row).find("td").length > 0)
-      .map((_, row) => {
-        const cells = $(row).find("td");
-        const obj = {};
-        headings.forEach((h, i) => {
-          const cell = cells.eq(i);
-          const link = cell.find("a");
-          obj[h] = link.length ? link.text().trim() : cell.text().trim();
-        });
-        return obj;
-      })
-      .get()
-      .filter((p) => Object.values(p).some((v) => v));
-
-    const medianRow = table.find("tfoot tr");
-    let median = null;
-    if (medianRow.length) {
-      const cells = medianRow.find("td");
-      median = {};
-      headings.forEach((h, i) => {
-        median[h] = cells.eq(i).text().trim() || "";
-      });
-    }
-
-    return { headings, peers, median };
+    return parsePeerTable($, null, ticker || null);
   } catch {
     return { headings: [], peers: [], median: null };
   }
@@ -337,12 +394,12 @@ export const scrapeScreenerPage = async (screenerLink) => {
   const $ = cheerio.load(html);
 
   const isConsolidated = screenerLink.includes("/consolidated/");
-  const companyId = extractCompanyId($);
-  process.stderr.write(`[screenerScraper] company_id=${companyId || "not found"}\n`);
+  const { companyId, warehouseId } = extractCompanyIds($);
+  process.stderr.write(`[screenerScraper] company_id=${companyId || "not found"} warehouse_id=${warehouseId || "not found"}\n`);
 
   const [stockChartResponse, peerComparison] = await Promise.all([
     companyId ? fetchChartData(companyId, isConsolidated) : Promise.resolve(null),
-    companyId ? fetchPeerComparison(companyId) : Promise.resolve({ headings: [], peers: [], median: null }),
+    warehouseId ? fetchPeerComparison(warehouseId, screenerLink.split("/company/")[1]?.split("/")[0]) : Promise.resolve({ headings: [], peers: [], median: null }),
   ]);
 
   const encodedSecret = companyId
@@ -363,7 +420,7 @@ export const scrapeScreenerPage = async (screenerLink) => {
   log("shareholding", `${shareholding.length} rows`);
   log("quartersData", `${quartersData.headings.length} cols, ${quartersData.values.length} rows`);
   log("prosConsData", `pros=${prosConsData.pros.length} cons=${prosConsData.cons.length}`);
-  log("peerComparison", `${peerComparison.peers.length} peers`);
+  log("peerComparison", `${peerComparison.peers.length} peers via warehouseId=${warehouseId}`);
   log("chart", stockChartResponse ? `datasets=${stockChartResponse.datasets?.length ?? 0}` : "EMPTY");
 
   return {
@@ -394,12 +451,12 @@ export const fetchFullStockData = async (screenerLink) => {
   const $ = cheerio.load(html);
 
   const isConsolidated = screenerLink.includes("/consolidated/");
-  const companyId = extractCompanyId($);
-  process.stderr.write(`[screenerScraper] company_id=${companyId || "not found"}\n`);
+  const { companyId, warehouseId } = extractCompanyIds($);
+  process.stderr.write(`[screenerScraper] company_id=${companyId || "not found"} warehouse_id=${warehouseId || "not found"}\n`);
 
   const [stockChartResponse, peerComparison] = await Promise.all([
     companyId ? fetchChartData(companyId, isConsolidated) : Promise.resolve(null),
-    companyId ? fetchPeerComparison(companyId) : Promise.resolve({ headings: [], peers: [], median: null }),
+    warehouseId ? fetchPeerComparison(warehouseId, screenerLink.split("/company/")[1]?.split("/")[0]) : Promise.resolve({ headings: [], peers: [], median: null }),
   ]);
 
   const encodedSecret = companyId
@@ -429,7 +486,7 @@ export const fetchFullStockData = async (screenerLink) => {
   log("balanceSheet", `${balanceSheet.headings.length} cols, ${balanceSheet.values.length} rows`);
   log("cashFlows", `${cashFlows.headings.length} cols, ${cashFlows.values.length} rows`);
   log("ratiosHistory", `${ratiosHistory.headings.length} cols, ${ratiosHistory.values.length} rows`);
-  log("peerComparison", `${peerComparison.peers.length} peers`);
+  log("peerComparison", `${peerComparison.peers.length} peers via warehouseId=${warehouseId}`);
   log("documents", `${documents.length} docs (concalls=${documents.filter(d => d.category === "concall").length})`);
   log("chart", stockChartResponse ? `datasets=${stockChartResponse.datasets?.length ?? 0}` : "EMPTY");
 

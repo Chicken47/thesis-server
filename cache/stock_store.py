@@ -206,7 +206,10 @@ def fetch_and_cache(ticker: str, screener_path: str, verbose: bool = True) -> di
 def get_or_fetch(ticker: str, screener_path: str, force: bool = False, verbose: bool = True) -> dict:
     """
     Return cached data if fresh, otherwise run full scrape.
-    This is the main entry point for the pipeline to use.
+
+    If the scrape path ends in /consolidated/ but returns no financial tables
+    (i.e. the company only files standalone statements), automatically retries
+    with the standalone path so callers don't need to know in advance.
     """
     if not force and is_cache_fresh(ticker):
         raw = load_raw(ticker)
@@ -215,7 +218,24 @@ def get_or_fetch(ticker: str, screener_path: str, force: bool = False, verbose: 
                 print(f"[StockStore] Using cached data for {ticker} (quarter: {_current_quarter()})")
             return raw
 
-    return fetch_and_cache(ticker, screener_path, verbose=verbose)
+    raw = fetch_and_cache(ticker, screener_path, verbose=verbose)
+
+    # Consolidated path returned incomplete financial tables → company is standalone-only.
+    # Check headings (year columns): rows may exist but without headings the UI shows nothing.
+    def _has_headings(key: str) -> bool:
+        return bool(raw.get(key, {}).get("headings"))
+
+    if (
+        screener_path.endswith("/consolidated/")
+        and not _has_headings("annualPL")
+        and not _has_headings("balanceSheet")
+    ):
+        standalone_path = screener_path.replace("/consolidated/", "/")
+        if verbose:
+            print(f"[StockStore] No financials at consolidated path, retrying standalone for {ticker}")
+        raw = fetch_and_cache(ticker, standalone_path, verbose=verbose)
+
+    return raw
 
 
 def cache_exists(ticker: str) -> bool:

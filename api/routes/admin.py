@@ -63,7 +63,10 @@ def screener_data(ticker: str):
     try:
         screener_path = f"/company/{upper}/consolidated/"
         raw = get_or_fetch(upper, screener_path, force=False, verbose=False)
-        upsert_stock(upper, name=raw.get("companyName", upper), screener_path=screener_path)
+        # get_or_fetch auto-retries with standalone if consolidated has no financials;
+        # use the path that's actually stored in raw (may differ from initial request)
+        actual_path = raw.get("screenerPath") or screener_path
+        upsert_stock(upper, name=raw.get("companyName", upper), screener_path=actual_path)
         save_full_screener_data(upper, raw)
         return jsonify(raw)
     except Exception as e:

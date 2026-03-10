@@ -124,6 +124,7 @@ Verdict: [BUY | WATCH | AVOID]
 → Write your answer inside <step1_output> ... </step1_output>
 
 ### Step 2: Financial Health Check
+- For banks, if other income includes fee income, trading income, is legitimate revenue
 - Revenue growth: use the 5-year CAGR if provided, or compute from the P&L table. Above or below 10% benchmark?
 - OPM trend: list the ACTUAL OPM % values. Stable, expanding, or compressing?
 - EPS trend: list the ACTUAL EPS values. Growing, flat, or declining?
