@@ -1,27 +1,62 @@
 /**
- * Google News scraper — uses RSS feed via axios, no browser required.
- * RSS endpoint: https://news.google.com/rss/search?q=...&hl=en-IN&gl=IN&ceid=IN:en
+ * News scraper — Bing News RSS feed via axios.
+ * Bing RSS provides real article snippets in <description>, unlike Google News RSS
+ * which only contains HTML tables of related stories.
+ *
+ * RSS endpoint: https://www.bing.com/news/search?q=...&format=rss
  */
 
 import axios from "axios";
 import * as cheerio from "cheerio";
 
 /**
- * Search Google News India for a stock-related query via RSS.
- *
- * @param {string} query - e.g. "TCS NSE India stock"
- * @param {number} maxResults - max articles to return (default 8)
- * @returns {Promise<Array<{title: string, source: string, time: string, url: string}>>}
+ * Parse an RFC 822 / HTTP-date string into a Date object.
+ * Returns null if unparseable.
  */
-export async function fetchGoogleNews(query, maxResults = 8) {
+function parseNewsDate(str) {
+  if (!str) return null;
+  try {
+    const d = new Date(str);
+    return isNaN(d.getTime()) ? null : d;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Strip HTML tags and collapse whitespace to get a plain-text snippet.
+ */
+function stripHtml(html) {
+  if (!html) return "";
+  return html
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Fetch news for a stock query via Bing News RSS.
+ * Returns articles sorted newest-first, with title, source, ISO date, description, and url.
+ *
+ * @param {string} query    - e.g. "Reliance Industries"
+ * @param {number} maxResults
+ * @returns {Promise<Array<{title, source, isoDate, description, url}>>}
+ */
+export async function fetchGoogleNews(query, maxResults = 10) {
   const encodedQuery = encodeURIComponent(query);
-  const url = `https://news.google.com/rss/search?q=${encodedQuery}&hl=en-IN&gl=IN&ceid=IN:en`;
+  const url = `https://www.bing.com/news/search?q=${encodedQuery}&format=rss`;
 
   try {
     const { data: xml } = await axios.get(url, {
       headers: {
         "User-Agent":
-          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         Accept: "application/rss+xml, application/xml, text/xml, */*",
       },
       timeout: 15000,
@@ -32,23 +67,51 @@ export async function fetchGoogleNews(query, maxResults = 8) {
 
     const items = [];
     $("item").each((_, el) => {
-      if (items.length >= maxResults) return false;
       const $el = $(el);
+
       const title = $el.find("title").first().text().trim();
+      if (!title) return;
+
+      // Bing RSS puts the article snippet in <description>
+      const rawDesc = $el.find("description").first().text().trim();
+      const description = stripHtml(rawDesc).slice(0, 200) || "";
+
+      const pubDate = $el.find("pubDate").first().text().trim();
+      const date = parseNewsDate(pubDate);
+
+      // link comes as text node after <link> in RSS 2.0
       const link =
         $el.find("link").first().text().trim() ||
-        $el.find("guid").first().text().trim();
-      const pubDate = $el.find("pubDate").first().text().trim();
-      const source = $el.find("source").first().text().trim() || "";
-      if (!title) return;
-      items.push({ title, source, time: pubDate, url: link });
+        $el.find("guid").first().text().trim() ||
+        "";
+
+      // Bing uses <News:Source> namespace element; also try <source>
+      let source =
+        $el.find("News\\:Source").first().text().trim() ||
+        $el.find("source").first().text().trim() ||
+        "";
+
+      // Fallback: source often appears in description as "Source Name - "
+      if (!source && description) {
+        const m = description.match(/^([A-Z][A-Za-z\s&\.]+?)\s*[-–]\s/);
+        if (m) source = m[1].trim();
+      }
+
+      items.push({ title, source, pubDate, isoDate: date ? date.toISOString() : pubDate, date, description, url: link });
     });
 
-    return items;
+    // Sort newest first
+    items.sort((a, b) => (b.date?.getTime() ?? 0) - (a.date?.getTime() ?? 0));
+
+    return items.slice(0, maxResults).map(({ title, source, isoDate, description, url }) => ({
+      title,
+      source,
+      time: isoDate,
+      description,
+      url,
+    }));
   } catch (err) {
-    process.stderr.write(
-      `[googleNewsScraper] RSS fetch failed: ${err.message}\n`
-    );
+    process.stderr.write(`[newsScraper] Bing RSS fetch failed: ${err.message}\n`);
     return [];
   }
 }

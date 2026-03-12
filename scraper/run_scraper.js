@@ -30,31 +30,29 @@ try {
   const raw = await fetchStockSnapshot(screenerPath);
   const compact = buildCompactStockSnapshot(raw);
 
-  // Build search query: use first few words of aboutText for company name hint
-  let companyHint = ticker;
+  // Extract clean company name from aboutText (same logic as run_full_scrape.js)
   const about = compact.aboutText || "";
-  if (about) {
-    const words = about.split(/\s+/).slice(0, 4).join(" ");
-    companyHint = words || ticker;
-  }
-  const newsQuery = `${companyHint} NSE stock India`;
+  const nameMatch = about.match(
+    /^((?:[A-Z][A-Za-z&\.]*\s*)+?)(?:\s+(?:was|is|has|are|operates|Ltd\b|Limited\b|was\s|is\s))/
+  );
+  const newsQuery = nameMatch ? nameMatch[1].trim() : ticker;
 
-  // Fetch Google News — non-fatal, Screener data still flows through on failure
-  let googleNews = [];
+  // Fetch news — non-fatal, Screener data still flows through on failure
+  let newsResults = [];
   try {
-    process.stderr.write(`[run_scraper] Fetching Google News: "${newsQuery}"\n`);
-    googleNews = await fetchGoogleNews(newsQuery, 8);
-    process.stderr.write(`[run_scraper] Got ${googleNews.length} news items\n`);
+    process.stderr.write(`[run_scraper] Fetching news: "${newsQuery}"\n`);
+    newsResults = await fetchGoogleNews(newsQuery, 8);
+    process.stderr.write(`[run_scraper] Got ${newsResults.length} news items\n`);
   } catch (newsErr) {
-    process.stderr.write(`[run_scraper] Google News error (non-fatal): ${newsErr.message}\n`);
+    process.stderr.write(`[run_scraper] News error (non-fatal): ${newsErr.message}\n`);
   }
 
-  // Replace stale Google Finance news with Google News results if we got any
-  if (googleNews.length > 0) {
-    compact.news = googleNews.map((item) => ({
+  if (newsResults.length > 0) {
+    compact.news = newsResults.map((item) => ({
       source: item.source,
       time: item.time,
       title: item.title,
+      description: item.description || "",
       link: item.url,
     }));
   }

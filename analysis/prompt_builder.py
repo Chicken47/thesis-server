@@ -13,6 +13,41 @@ baked into the instructions section.
 from __future__ import annotations
 
 from pathlib import Path
+from email.utils import parsedate_to_datetime
+
+
+def _fmt_news_date(time_str: str) -> str:
+    """Convert ISO 8601 or RFC 822 date string to '13 Mar 2026' display format."""
+    if not time_str:
+        return ""
+    for parse in (
+        lambda s: parsedate_to_datetime(s),
+        lambda s: __import__("datetime").datetime.fromisoformat(s),
+    ):
+        try:
+            dt = parse(time_str)
+            return dt.strftime("%-d %b %Y")
+        except Exception:
+            pass
+    # last resort: return the raw string (truncated)
+    return time_str[:16]
+
+
+def _fmt_news_item(n: dict) -> str:
+    """Format a single news item for injection into the prompt."""
+    date = _fmt_news_date(n.get("time", ""))
+    title = n.get("title", "").strip()
+    source = n.get("source", "").strip()
+    desc = n.get("description", "").strip()
+
+    header = f"  [{date}] {title}"
+    if source:
+        header += f" — {source}"
+    if desc and desc.lower() != title.lower():
+        # Truncate to 160 chars to keep prompt lean
+        snippet = desc if len(desc) <= 160 else desc[:157] + "..."
+        return f"{header}\n    {snippet}"
+    return header
 
 _MACRO_CONTEXT_PATH = Path(__file__).parent.parent / "knowledge_base" / "macro" / "macro_context.md"
 
@@ -490,7 +525,7 @@ def _format_snapshot(snapshot: dict, symbol: str) -> str:
 
     news = snapshot.get("news", [])
     if news:
-        news_lines = [f"  [{n.get('time', '')[:10]}] {n.get('title', '')}" for n in news[:5] if n.get("title")]
+        news_lines = [_fmt_news_item(n) for n in news[:8] if n.get("title")]
         if news_lines:
             parts.append("**Recent News:**\n" + "\n".join(news_lines))
 
@@ -542,7 +577,7 @@ def _build_recent_earnings_section(snapshot: dict, deep_data: dict | None) -> st
         if any(kw in (n.get("title", "") + n.get("time", "")).lower() for kw in _EARNINGS_KEYWORDS)
     ]
     if earnings_news:
-        lines = [f"  [{n.get('time', '')[:10]}] {n.get('title', '')}" for n in earnings_news[:6] if n.get("title")]
+        lines = [_fmt_news_item(n) for n in earnings_news[:6] if n.get("title")]
         if lines:
             parts.append("**Earnings-related news:**\n" + "\n".join(lines))
 

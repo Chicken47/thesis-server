@@ -56,6 +56,37 @@ def rag_status(ticker: str):
     return jsonify({"rag_available": index_exists(ticker.upper())})
 
 
+@admin_bp.post("/admin/purge-stock/<ticker>")
+def purge_stock_cache(ticker: str):
+    """Delete the entire stock_cache directory for one ticker."""
+    import shutil
+    from pathlib import Path
+    ticker = ticker.upper()
+    stock_dir = Path(__file__).parent.parent.parent / "stock_cache" / ticker
+    removed = False
+    if stock_dir.exists() and stock_dir.is_dir():
+        shutil.rmtree(stock_dir)
+        removed = True
+    log.info("Purged stock cache", extra={"ticker": ticker, "removed": removed})
+    return jsonify({"ticker": ticker, "cache_removed": removed})
+
+
+@admin_bp.post("/admin/purge-rag")
+def purge_rag():
+    """Delete all ChromaDB RAG index directories from stock_cache."""
+    import shutil
+    from pathlib import Path
+    cache_dir = Path(__file__).parent.parent.parent / "stock_cache"
+    deleted = []
+    if cache_dir.exists():
+        for rag_dir in cache_dir.glob("*/rag_index"):
+            if rag_dir.is_dir():
+                shutil.rmtree(rag_dir)
+                deleted.append(rag_dir.parent.name)
+    log.info("Purged RAG indexes", extra={"tickers": deleted})
+    return jsonify({"deleted": deleted, "count": len(deleted)})
+
+
 @admin_bp.get("/screener-data/<ticker>")
 def screener_data(ticker: str):
     """Scrape live from Screener.in, persist to DB, return raw JSON."""

@@ -28,5 +28,4 @@ def get_job_status(job_id: str):
         result = get_analysis_by_id(job["result_id"])
         if result:
             response["result"] = result
-
     return jsonify(response)
