@@ -12,6 +12,7 @@ baked into the instructions section.
 
 from __future__ import annotations
 
+import datetime
 from pathlib import Path
 from email.utils import parsedate_to_datetime
 
@@ -84,8 +85,11 @@ def build_analysis_prompt(
     pdf_section = _build_pdf_section(rag_context, stock_symbol)
     macro_section = _build_macro_section()
     earnings_section = _build_recent_earnings_section(snapshot, deep_data)
+    today = datetime.date.today().strftime("%-d %b %Y")
 
     prompt = f"""You are an expert Indian equity analyst with 15+ years of experience analyzing NSE/BSE listed companies.
+
+Today's date: {today}. Use this to judge the recency of all news items — anything older than 3 months should be treated as background context, not a current signal.
 
 Your task: Perform a rigorous fundamental analysis of {stock_symbol} and produce a structured investment verdict.
 
@@ -172,9 +176,14 @@ Verdict: [BUY | WATCH | AVOID]
 CRITICAL RULE: Base your score ONLY on data present above. Do NOT invent or assume risks.
 
 1. Promoter HOLDING %: from shareholding table. HIGH holding (>50%) by reputable group = POSITIVE.
-2. Promoter PLEDGE %: DIFFERENT from holding. Pledge = fraction of their shares pledged as loan collateral.
-   If pledge % is NOT explicitly mentioned anywhere in the data, treat it as 0%.
-   ⚠️ Do NOT confuse holding % with pledge %. A promoter holding 50% of the company is NOT pledging 50%.
+2. Promoter PLEDGE % (CRITICAL — DIFFERENT from holding %):
+   DEFINITION: Pledge = % of promoter's OWN shares pledged as loan collateral. NOT the same as their holding.
+   WHERE TO FIND: Look for an explicit "Pledge %" or "Pledged shares" row in the shareholding table.
+   IF NOT FOUND: Write "Promoter pledge: Not mentioned in data, assumed 0%"
+   NEVER assume: A promoter holding 50% of the company does NOT mean they pledged 50%.
+   EXAMPLE:
+   ✓ CORRECT: "Promoter holding 50%, pledge 0% (not mentioned in data)"
+   ✗ WRONG: "Promoter holding 50%, pledge 50%"
 3. Promoter identity: Tata Sons, established MNC parent, Ambani (Reliance) = known institutional promoter = positive.
 4. SEBI/audit issues: Only flag if explicitly mentioned in news or cons. If not mentioned = no issues.
 
@@ -223,12 +232,13 @@ VERDICT RULES:
     * Auditor mid-term resignation
     * SEBI fraud notice / SFIO investigation
 
-DOWNSIDE SCENARIO (required if market indicators show stock >15% below 52-week high):
-- Quote the 52-week high and current price from market indicators. Calculate % decline.
+DOWNSIDE SCENARIO (mandatory for all stocks):
+- Quote the 52-week high and current price from market indicators. Calculate % from high.
 - At the current PE of X, the market is pricing in approximately Y% earnings growth.
-- Bear case: if growth slows to Z%, a fair PE would be Wx → implied price = ₹V → X% downside from current.
-- State: "Margin of safety is [adequate/thin/insufficient] because [specific reason with numbers]."
-- Only skip this if 52-week data is absent from the snapshot.
+- Bear case: if growth slows to Z%, a fair PE would be W → implied price = ₹V → X% downside from current.
+- Bull case: if growth accelerates to A%, PE re-rates to B → implied price = ₹C → X% upside.
+- State: "Risk/reward ratio is [favorable/balanced/unfavorable] because [specific reason with numbers]."
+- Only skip if 52-week price data is entirely absent from the snapshot.
 
 MACRO ADJUSTMENT (±0.5 max, add to subtotal in step5_output):
 Use the MACROECONOMIC CONTEXT section as the primary source:
@@ -238,6 +248,12 @@ Use the MACROECONOMIC CONTEXT section as the primary source:
 - FMCG: below-normal monsoon = -0.5. Budget consumption boost = +0.5.
 - Infra/Capex: Govt capex front-loading = +0.5 tailwind.
 - Export-oriented (IT, Metals, Pharma): FII selling + USD strength = -0.5.
+- Hospitality/Travel: travel disruptions (conflict, pandemic) = -0.3 to -0.5. Strong GDP + event calendar = +0.3.
+- Retail/Consumer: festive demand surge = +0.3. GST rate changes or consumption slowdown = ±0.3.
+- Textiles: cotton price spike = -0.3. Export demand recovery or China+1 tailwind = +0.3 to +0.5.
+- Real Estate: RBI rate cuts = +0.5. Affordability squeeze + rate hike cycle = -0.5. RERA compliance = neutral.
+- Other sectors: Identify the primary macro driver (commodity price, consumer demand, regulatory change, export demand).
+  If clear tailwind/headwind: ±0.3 to ±0.5. If ambiguous or multiple offsetting factors: 0 to ±0.2.
 Cite the specific macro fact. If no clear signal or section absent, write "0 — no clear signal".
 
 → Write your answer inside <step5_output> ... </step5_output>
@@ -249,6 +265,9 @@ Rule 2 — "invalidation_triggers": NEGATIVE failure conditions that would break
   CORRECT: "EBIT margin falls below 23% for 2 consecutive quarters"
   WRONG: "Improvement in governance" (that's an upside, not a trigger)
 Rule 3 — "key_risks": Specific. Name the revenue segment, metric, or mechanism.
+  For cyclical/seasonal businesses (hospitality, retail, agrochemicals, tourism):
+  Do NOT flag known seasonal patterns as risks — Q1/Q2 slowdowns for a hotel chain are expected, not a risk.
+  ONLY flag seasonality if it is WORSENING (e.g., peak season revenues declining YoY, or off-season losses deepening).
 Rule 4 — "red_flags": ONLY issues found in the data. If none: ["None identified from available data"]
 Rule 5 — "news_sentiment.note": DISTINGUISH confirmed revenue from mere announcements.
   Partnerships / MoUs / AI tie-ups with NO disclosed TCV or deal value = NOT a revenue-positive signal.
@@ -365,9 +384,10 @@ def _format_pl(pl: dict, cf: dict) -> str:
     if ocf_row and pat_row:
         ocf_vals = ocf_row.get("values", [])
         pat_vals = pat_row.get("values", [])
-        # Align: CF usually starts 1yr earlier than P&L
+        # Use latest period from both datasets (assuming they're aligned)
+        # If CF data starts earlier than P&L, both [-1] will still be from latest available year
         ocf_latest = _safe_float(ocf_vals[-1]) if ocf_vals else None
-        pat_latest = _safe_float(pat_vals[-2]) if len(pat_vals) > 1 else None  # skip TTM
+        pat_latest = _safe_float(pat_vals[-1]) if pat_vals else None  # use same period as OCF
         if ocf_latest and pat_latest and pat_latest > 0:
             ratio = ocf_latest / pat_latest
             insights.append(f"OCF/PAT (latest): {ratio:.2f}x ({'quality earnings' if ratio >= 0.8 else 'below par'})")
@@ -713,7 +733,13 @@ def _build_step1_sector_guidance(sector: str) -> str:
             "- Address the key moat question: what prevents a competitor from taking these customers?\n"
             "  Moat types in India: switching costs, regulatory moat (banking licenses, power zones),\n"
             "  scale (Asian Paints), network effects (BSE/NSE, Naukri), brand (Titan, Pidilite).\n"
-            "- ROCE >20% consistently = strong business. 15-20% = decent. <12% = needs strong story."
+            "- ROCE >20% consistently = strong business. 15-20% = decent. <12% = needs strong story.\n"
+            "- MANDATORY PEER GROWTH CHECK (applies to all sectors):\n"
+            "  * From the peer comparison table, list YoY profit growth % for each peer.\n"
+            "  * State explicitly: '[Company] at X% growth vs sector median Y%'\n"
+            "  * Banking: compare ROE + NP growth. FMCG: compare volume growth + pricing power.\n"
+            "  * Auto: compare volume growth + margin trends. Energy: compare capacity utilization + realization.\n"
+            "  * If below median: 'Growing slower than peers — premium PE not justified.'"
         )
 
 
