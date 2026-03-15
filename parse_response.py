@@ -26,7 +26,7 @@ DATA_DIR = Path(__file__).parent / "data"
 
 def extract_step_outputs(text: str) -> dict:
     steps = {}
-    for i in range(1, 6):
+    for i in range(1, 8):
         tag = f"step{i}_output"
         m = re.search(rf"<{tag}>(.*?)</{tag}>", text, re.DOTALL)
         if m:
@@ -97,6 +97,8 @@ def build_record(raw: str, ticker: str | None, sector: str | None, model: str | 
         "invalidation_triggers":  parsed_json.get("invalidation_triggers", []),
         "watch_for_next_quarter": parsed_json.get("watch_for_next_quarter", ""),
         "news_sentiment":         parsed_json.get("news_sentiment", {}),
+        "buy_zones":              parsed_json.get("buy_zones", {}),
+        "market_vs_verdikt":      parsed_json.get("market_vs_verdikt", {}),
         "step_outputs":           step_outputs,
         "model_used":             model or parsed_json.get("model_used", "unknown"),
         "sector":                 sector or parsed_json.get("sector", ""),
@@ -152,7 +154,7 @@ def main():
     print(f"  Verdict  : {record['verdict'].upper()}  (conviction {record['conviction']})")
     print(f"  Sector   : {record['sector'] or '(none)'}")
     print(f"  Model    : {record['model_used']}")
-    print(f"  Steps    : {steps_found}/5 extracted")
+    print(f"  Steps    : {steps_found}/7 extracted")
     print(f"  Saved to : {out_path}")
 
 

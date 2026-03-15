@@ -142,13 +142,13 @@ def save_analysis(ticker: str, result: dict) -> str:
                     conviction_breakdown, summary,
                     key_strengths, key_risks, red_flags, invalidation_triggers,
                     watch_for_next_quarter, news_sentiment, step_outputs,
-                    sector, raw_response
+                    sector, raw_response, buy_zones, market_vs_verdikt
                 ) VALUES (
                     %s, %s, %s, %s,
                     %s, %s,
                     %s, %s, %s, %s,
                     %s, %s, %s,
-                    %s, %s
+                    %s, %s, %s, %s
                 ) RETURNING id
                 """,
                 (
@@ -170,6 +170,8 @@ def save_analysis(ticker: str, result: dict) -> str:
                         "text": result.get("raw_response", ""),
                         "rag_context_length": result.get("rag_context_length", 0),
                     }),
+                    _J(result.get("buy_zones") or {}),
+                    _J(result.get("market_vs_verdikt") or {}),
                 ),
             )
             return str(cur.fetchone()["id"])

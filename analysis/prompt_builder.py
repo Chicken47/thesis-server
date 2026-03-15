@@ -112,7 +112,7 @@ If a PDF RESEARCH EXCERPTS section is present, you MUST draw on it in Steps 1 an
 
 ## ⚠️ MANDATORY OUTPUT FORMAT
 
-Before the JSON block you MUST produce ALL FIVE tagged sections below, in order.
+Before the JSON block you MUST produce ALL SEVEN tagged sections below, in order.
 Do NOT skip any tag. Do NOT merge steps. Every tag must appear exactly once in your response.
 
 <step1_output>
@@ -151,25 +151,51 @@ Verdict: [BUY | WATCH | AVOID]
 [One sentence on the deciding factor]
 </step5_output>
 
+<step6_output>
+BUY ZONES (derived from bull/bear price scenarios in Step 5):
+  Current price: ₹[X]
+  AGGRESSIVE BUY: ₹[A]–₹[B] | For: [investor type] | Reasoning: [link to bull case] | Trigger: [entry condition]
+  CONSERVATIVE BUY: ₹[C]–₹[D] | For: [investor type] | Reasoning: [link to base case] | Trigger: [event/de-rating]
+  DEEP VALUE: ₹[E]–₹[F] | For: [investor type] | Reasoning: [link to bear case floor] | Trigger: [crisis/capitulation]
+  Position: [overvalued — wait | in aggressive zone — fair for bulls | in conservative zone — good entry | in deep value — exceptional opportunity]
+</step6_output>
+
+<step7_output>
+MARKET NARRATIVE vs VERDIKT POV:
+  Dominant market story: [growth/turnaround/distress/hype — in one phrase]
+  Market claims: [key claims extracted from news headlines]
+  Emotional tone: [euphoric/fearful/neutral]
+  VERDIKT fundamental view: [what the numbers actually show]
+  Gap: Market expects [X metric] | Fundamentals support [Y metric] | Magnitude: [Large/Medium/Small/Aligned]
+  Trade signal: [FADE | RIDE | IGNORE]
+  Reasoning: [one sentence why]
+</step7_output>
+
 ---
 
 ### Step 1: Business Quality Assessment
-- What is the core revenue model from the company description?
-- What is the competitive moat? Be specific: switching costs, scale advantages, brand, regulatory moat, network effects.
-- ROE/ROCE: cite the ACTUAL numbers from the ratios.
-  ROCE benchmarks: IT services >25% = excellent, <18% = weak | Banking use ROE: >15% good, >18% excellent | Energy/Refining 8-12% is NORMAL (capital-heavy, do NOT penalize) | FMCG >30% = great compounder | Auto >15% = good (cyclical, evaluate at mid-cycle) | Pharma >20% = solid
-- Trend matters more than level: ROCE rising 12%→18% over 3 years is more exciting than 25% declining to 20%.
+- State the core revenue model in one sentence.
+- Name the specific moat: switching costs / regulatory / brand / network effects / scale. Be concrete.
+- Cite actual ROE/ROCE. Score on TRAJECTORY + MOAT QUALITY, not just current level:
+  - 8–10: Durable moat + ROCE >18% sustained 3+ years + market leadership. (HDFC Bank, Asian Paints tier)
+  - 6–7: Real moat but returns building, OR strong returns but contested moat. Score trajectory.
+  - 4–5: Questionable moat AND ROCE <10%, or category in structural decline.
+  - 1–3: No moat, commoditised, near-zero or negative returns.
+  CRITICAL: A genuine moat with improving trajectory can score 6–7 even if ROE is still low (e.g., JFIN at 1.23% ROE but Jio ecosystem moat = 6/10, NOT 5/10). Do NOT penalise trajectory businesses for current-period weakness.
 {step1_sector_guidance}
 → Write your answer inside <step1_output> ... </step1_output>
 
 ### Step 2: Financial Health Check
-- For banks, if other income includes fee income, trading income, is legitimate revenue
-- Revenue growth: use the 5-year CAGR if provided, or compute from the P&L table. Above or below 10% benchmark?
-- OPM trend: list the ACTUAL OPM % values. Stable, expanding, or compressing?
-- EPS trend: list the ACTUAL EPS values. Growing, flat, or declining?
-- Debt: Net Debt/EBITDA <2x = comfortable, 2-4x = watch, >4x = stress. For capital-intensive businesses (infra, power, energy), higher debt is acceptable.
-- Cash flow quality: OCF/PAT >0.8 = quality earnings. <0.5 = earnings may be illusory.
-- Other income check: if Other Income > 20% of Net Profit, compute Operating PAT = Net Profit − Other Income, recalculate Operating PE = Market Cap / Operating PAT. If Operating PE > 1.5× headline PE, flag as "earnings quality risk — headline PE understates true valuation."
+- For banks: other income = fee/trading income is legitimate; don't flag it.
+- Revenue growth: 5-year CAGR vs 10% benchmark. List actual values.
+- OPM trend: list actual % values — stable / expanding / compressing?
+- EPS trend: list actual values — growing / flat / declining?
+- Debt: Net Debt/EBITDA <2x comfortable, 2–4x watch, >4x stress. Capital-intensive (infra, power) = higher D/E acceptable.
+- OCF/PAT — interpret by business model:
+  * NBFCs/Banks/Lending: negative OCF is NORMAL when loan book growing — loan disbursements = operating outflow. Do NOT flag as earnings quality risk if loan book growing >20% YoY and GNPA <3%. Write: "OCF/PAT reflects loan book expansion — standard for growing NBFC." Monitor GNPA trajectory instead.
+  * Asset-light (IT, platforms, SaaS): OCF/PAT should be >1.0x. Below 0.8x = flag.
+  * Capex-heavy (infra, manufacturing): 0.5–0.8x acceptable during expansion. Negative for 3+ years with no revenue growth = flag.
+- Other income check: if Other Income > 20% of Net Profit → compute Operating PAT = Net Profit − Other Income → if Operating PE > 1.5× headline PE, flag "earnings quality risk."
 → Write your answer inside <step2_output> ... </step2_output>
 
 ### Step 3: Indian Governance — SCORE ONLY WHAT THE DATA SHOWS
@@ -210,27 +236,28 @@ MANDATORY: Quote the exact PE ratio from the ratios data.
     Energy/Refining: 8-15x. Low PE is structural, not a discount.
 - Premium/discount: "Xx vs sector range Xx-Xx = X% premium/discount"
 - Is it justified? Compare company ROE vs sector avg ROE, revenue growth vs sector growth.
-- PEER GROWTH TABLE ANALYSIS (mandatory if peer table is available):
-  * List each peer's profit growth % (NP Gr% column). Compute who is above/below the company.
-  * State: "[Company] at X% growth vs [Peer] at Y% growth — [above/below sector median Z%]"
-  * If below median: "Growing slower than peers — does not justify a parity or premium PE."
-- PEG REASONING (mandatory): Do NOT call a stock cheap purely because PE < historical range.
-  * If a peer has the same or lower PE but higher growth, state explicitly:
-    "Paying [X]x for [Y]% growth vs [Peer] at [X]x for [Z]% growth → [Company] is fairly valued, NOT cheap."
-  * A stock is only genuinely cheap if PE is at a discount AND growth is in-line with or better than peers.
+- PEER GROWTH TABLE (mandatory if available):
+  * List each peer's NP Gr% and PE. Compute sector median growth and median PE.
+  * State: "[Company] at X% growth vs sector median Y% — above/below."
+  * SCORING CAPS FROM PEER COMPARISON (these override your initial estimate):
+    - Company ONLY negative/zero grower in peer set → valuation score MAX 3/10 regardless of absolute PE
+    - Company growing faster than all peers AND trading at discount to median → valuation score MIN 7/10
+    - Company slowest grower AND trading at premium to all peers → valuation score MAX 3/10
+    - Company fastest grower with PEG below peer median PEG → score 7–9/10
+  * Always state: "Paying [X]x for [Y]% growth vs [Peer] at [A]x for [B]% growth → subject is [better/worse] value"
+- PEG: A stock is only genuinely cheap if PE at discount AND growth ≥ peers. Never call cheap on PE alone.
 → Write your answer inside <step4_output> ... </step4_output>
 
 ### Step 5: Synthesis — Final Verdict
 Using the four scores from steps 1–4, compute the weighted conviction and write it inside <step5_output>.
 
 VERDICT RULES:
-- Conviction >7.5 AND no red flags: BUY
-- Conviction 6.0-7.5 AND no major red flags: WATCH
-- Conviction <6.0 OR any governance red flag: AVOID
-- OVERRIDE to AVOID regardless of score if any of:
-    * Promoter pledge >70% or spike >10% QoQ
-    * Auditor mid-term resignation
-    * SEBI fraud notice / SFIO investigation
+- Conviction >7.5 AND no red flags → BUY
+- Conviction 6.0–7.5 AND no major red flags → WATCH
+- Conviction <6.0 OR any governance red flag → AVOID
+- OVERRIDE to AVOID regardless of score: pledge >70% spike QoQ / auditor resignation / SEBI fraud / SFIO
+- SANITY CHECKS: conviction 7.8 → must be BUY; conviction 5.2 → must be AVOID; red_flags 2+ items → conviction ≤6.5; invalidation_triggers 5+ items → conviction ≤7.0
+- If verdict = WATCH, the summary MUST contain: "WATCH means: [specific action]. Becomes BUY if [specific condition]. Becomes AVOID if [specific condition]."
 
 DOWNSIDE SCENARIO (mandatory for all stocks):
 - Quote the 52-week high and current price from market indicators. Calculate % from high.
@@ -240,23 +267,67 @@ DOWNSIDE SCENARIO (mandatory for all stocks):
 - State: "Risk/reward ratio is [favorable/balanced/unfavorable] because [specific reason with numbers]."
 - Only skip if 52-week price data is entirely absent from the snapshot.
 
-MACRO ADJUSTMENT (±0.5 max, add to subtotal in step5_output):
-Use the MACROECONOMIC CONTEXT section as the primary source:
-- IT: INR depreciation vs USD = +0.5. US tech spending slowdown = -0.5.
-- Banking/NBFC: RBI rate cut cycle active = +0.5. Rate pause = neutral. Rising NPA = -0.5.
-- Energy/OMCs: Brent crude >$85 sustained = -0.5. Crude $65-75 = neutral/positive.
-- FMCG: below-normal monsoon = -0.5. Budget consumption boost = +0.5.
-- Infra/Capex: Govt capex front-loading = +0.5 tailwind.
-- Export-oriented (IT, Metals, Pharma): FII selling + USD strength = -0.5.
-- Hospitality/Travel: travel disruptions (conflict, pandemic) = -0.3 to -0.5. Strong GDP + event calendar = +0.3.
-- Retail/Consumer: festive demand surge = +0.3. GST rate changes or consumption slowdown = ±0.3.
-- Textiles: cotton price spike = -0.3. Export demand recovery or China+1 tailwind = +0.3 to +0.5.
-- Real Estate: RBI rate cuts = +0.5. Affordability squeeze + rate hike cycle = -0.5. RERA compliance = neutral.
-- Other sectors: Identify the primary macro driver (commodity price, consumer demand, regulatory change, export demand).
-  If clear tailwind/headwind: ±0.3 to ±0.5. If ambiguous or multiple offsetting factors: 0 to ±0.2.
-Cite the specific macro fact. If no clear signal or section absent, write "0 — no clear signal".
+MACRO ADJUSTMENT (±0.5 max, never exceed):
+Use the MACROECONOMIC CONTEXT section as primary source. Rules:
+- +0.3 to +0.5: direct, confirmed tailwind (cite specific policy + transmission mechanism)
+- +0.1 to +0.2: mild industry-level tailwind
+- 0: default unless clear directional impact; state "0 — no clear signal"
+- -0.1 to -0.5: headwind (same specificity required)
+- FORBIDDEN: vague adjustments ("positive environment") / double-counting (if already in Step 1 score, don't add macro again) / adjustments >0.5
+Sector signals: IT: INR depreciation +0.5 / US slowdown -0.5 | Banking/NBFC: rate cut cycle +0.3→+0.5 / rate pause neutral / rising NPA -0.5 | Energy/OMCs: crude >$85 -0.5 / $65–75 neutral | FMCG: bad monsoon -0.5 / consumption boost +0.5 | Infra: capex front-loading +0.5 | Hospitality: disruptions -0.3→-0.5 / strong GDP +0.3 | Other: identify primary driver; clear signal ±0.3–0.5, ambiguous 0–±0.2
+Cite the specific macro fact with date. If macro section absent, write "0 — macro context unavailable".
 
 → Write your answer inside <step5_output> ... </step5_output>
+
+### Step 6: Buy Zones — Entry Price Framework
+Extract current price from snapshot. If unavailable, set all zone values to 0 and skip.
+
+ZONE CALCULATION (all anchored to your Step 5 price scenarios — do not invent):
+- AGGRESSIVE BUY: lower = current price × 0.85–0.90 OR book value (whichever gives better support); upper = current price ± 5%. Should offer 40–60% upside to bull case from mid-point.
+- CONSERVATIVE BUY: lower = current × 0.70–0.80; upper = current × 0.75–0.85. Align with base case fair value ±10%. Offers 25–40% upside from mid-point.
+- DEEP VALUE: lower = bear case floor from Step 5; upper = current × 0.50–0.65 OR 0.8× book value (whichever is lower). Minimum 50% upside even in bear case.
+
+HARD RULES:
+- Zones must NOT overlap (aggressive high < conservative low < deep value high)
+- Every zone must cite the specific valuation assumption it's anchored to
+- Trigger must be a specific event ("GNPA exceeds 4%" / "EPS crosses ₹X") — NOT "if market falls"
+- If all three zones are within 15% of each other: recalculate — insufficient differentiation
+- If P/B at deep value zone > 1.2x: add WARNING — may not provide genuine margin of safety
+
+POSITION (use exact phrase):
+- Current price > aggressive high + 10%: "overvalued — wait for correction"
+- Within aggressive zone: "at aggressive zone — fair for bulls with conviction"
+- At aggressive/conservative boundary: "approaching value zone — watch for conservative entry"
+- Within conservative zone: "in conservative buy zone — good entry for most investors"
+- Within deep value zone: "in deep value zone — exceptional opportunity if thesis intact"
+
+→ Write your answer inside <step6_output> ... </step6_output>
+
+### Step 7: Market Narrative vs VERDIKT POV
+
+EXTRACTION (NEVER invent — only use news items present in the data):
+- Scan news for the dominant story. If <3 news items or no clear narrative: set trade_signal = "IGNORE", explain.
+- Market claims: 2–5 claims, each citing source + date + specific number if available.
+  GOOD: "[15 Mar 2026 — ET] Targets 40% revenue growth for FY26 based on deal pipeline"
+  BAD: "Market believes growth will continue" (vague, no source)
+
+VERDIKT VIEW (from your Steps 1–5):
+- Acknowledge what the narrative gets RIGHT (be honest; not everything is FADE)
+- Identify where narrative is CONTRADICTED by numbers with specific data
+- Format: "Narrative claims X → data shows Y (cite step and figure)"
+
+GAP QUANTIFICATION (must include specific metric + timeframe):
+- Market expects: [X% growth / Y margins / Z multiple over FY26–27]
+- Fundamentals support: [A% / B / C — cite which data point]
+- Large >30% deviation | Medium 15–30% | Small <15% | Aligned <5%
+
+TRADE SIGNAL (must be consistent with verdict):
+- FADE: market pricing 2+ years out OR ignoring material risk → aligns with AVOID or upper WATCH
+- RIDE: de-rating overdone OR quality improving faster than market realises → aligns with BUY or lower WATCH
+- IGNORE: narrative matches fundamentals → aligns with WATCH at fair value
+- CONSISTENCY CHECKS: FADE + BUY verdict = ERROR; RIDE + AVOID verdict = ERROR; Large gap + IGNORE = ERROR
+
+→ Write your answer inside <step7_output> ... </step7_output>
 
 RULES FOR THE JSON OUTPUT:
 
@@ -274,6 +345,9 @@ Rule 5 — "news_sentiment.note": DISTINGUISH confirmed revenue from mere announ
   CORRECT: "OpenAI partnership announced — no TCV disclosed. Watch for concrete deal wins over next 2 quarters before treating as positive."
   WRONG: "OpenAI partnership signals strong AI positioning" (no revenue confirmed — do not price in)
   Only call news positive if: earnings call confirms revenue impact, or TCV/contract value is explicitly stated.
+Rule 6 — "summary": MAX 250 characters. Must contain: (1) verdict + deciding factor in one sentence, (2) key strength, (3) key risk, (4) current valuation context.
+  Format: "[Stock] is [VERDICT] at [X]/10 because [deciding factor]. [Key strength] offset by [key risk] → [favorable/balanced/unfavorable] risk/reward at ₹[price] ([valuation metric])."
+  If verdict = WATCH: add "WATCH means: [action]. BUY if [condition]. AVOID if [condition]."
 
 ```json
 {{
@@ -296,11 +370,49 @@ Rule 5 — "news_sentiment.note": DISTINGUISH confirmed revenue from mere announ
     "overall": "positive|neutral|negative|mixed",
     "key_themes": ["theme from headlines"],
     "note": "1-sentence explanation of what the headlines signal"
+  }},
+  "buy_zones": {{
+    "current_price": 0,
+    "aggressive": {{
+      "low": 0,
+      "high": 0,
+      "for": "high conviction investors willing to pay a premium",
+      "reasoning": "link to bull case assumption from Step 5",
+      "trigger": "condition that justifies entry at this level"
+    }},
+    "conservative": {{
+      "low": 0,
+      "high": 0,
+      "for": "margin-of-safety investors seeking 10–20% discount",
+      "reasoning": "link to base case valuation from Step 4",
+      "trigger": "de-rating event or time-based correction that creates this entry"
+    }},
+    "deep_value": {{
+      "low": 0,
+      "high": 0,
+      "for": "contrarian or distressed buyers requiring 25–40% discount",
+      "reasoning": "link to bear case floor from Step 5 downside scenario",
+      "trigger": "crisis, earnings miss, or sector capitulation that drives price here"
+    }},
+    "position": "overvalued — wait|in aggressive zone — fair for bulls|in conservative zone — good entry|in deep value — exceptional opportunity"
+  }},
+  "market_vs_verdikt": {{
+    "market_narrative": "one-phrase dominant market story",
+    "market_claims": ["claim extracted from news 1", "claim extracted from news 2"],
+    "emotional_tone": "euphoric|fearful|neutral",
+    "verdikt_view": "what the numbers actually show, contrasting market claims",
+    "gap_analysis": {{
+      "market_expects": "X% metric description",
+      "fundamentals_support": "Y% metric description",
+      "magnitude": "Large|Medium|Small|Aligned"
+    }},
+    "trade_signal": "FADE|RIDE|IGNORE",
+    "reasoning": "one sentence explaining the gap and what to do about it"
   }}
 }}
 ```
 
-Important: conviction is 0-10. verdict is exactly one of: buy, watch, avoid. news_sentiment.overall is exactly one of: positive, neutral, negative, mixed.
+Important: conviction is 0-10. verdict is exactly one of: buy, watch, avoid. news_sentiment.overall is exactly one of: positive, neutral, negative, mixed. market_vs_verdikt.trade_signal is exactly one of: FADE, RIDE, IGNORE. buy_zones.position is exactly one of the four phrases above. If current price data is unavailable, set buy_zones.current_price to 0 and all zone low/high to 0.
 """
     return prompt.strip()
 
