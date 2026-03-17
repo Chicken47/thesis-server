@@ -6,11 +6,51 @@ Full analysis pipeline:
 import json
 import os
 import re
+from xml.etree import ElementTree as ET
+from email.utils import parsedate_to_datetime
+from urllib.parse import quote as url_quote
 
 import anthropic
+import requests
 
 from rag.retrieval import retrieve_context
 from analysis.prompt_builder import build_analysis_prompt
+
+
+def _fetch_live_news(ticker: str, max_results: int = 15) -> list[dict]:
+    """Fetch fresh news from Bing RSS at analysis time. Query: '{ticker} share'."""
+    query = f"{ticker} share"
+    url = f"https://www.bing.com/news/search?q={url_quote(query)}&format=rss"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "application/rss+xml, application/xml, text/xml, */*",
+    }
+    try:
+        resp = requests.get(url, headers=headers, timeout=15)
+        root = ET.fromstring(resp.text)
+        items = []
+        for item in root.iter("item"):
+            title = (item.findtext("title") or "").strip()
+            if not title:
+                continue
+            pub_date = (item.findtext("pubDate") or "").strip()
+            try:
+                dt = parsedate_to_datetime(pub_date)
+            except Exception:
+                continue
+            link = (item.findtext("link") or item.findtext("guid") or "").strip()
+            raw_desc = (item.findtext("description") or "").strip()
+            desc = re.sub(r"<[^>]+>", " ", raw_desc).strip()[:200]
+            source = (item.findtext("source") or "").strip()
+            if not source and desc:
+                m = re.match(r'^([A-Z][A-Za-z\s&.]+?)\s*[-–]\s', desc)
+                if m:
+                    source = m.group(1).strip()
+            items.append({"title": title, "source": source, "time": dt.isoformat(), "description": desc, "url": link, "_dt": dt})
+        items.sort(key=lambda x: x["_dt"].timestamp(), reverse=True)
+        return [{"title": i["title"], "source": i["source"], "time": i["time"], "description": i["description"], "url": i["url"]} for i in items[:max_results]]
+    except Exception as e:
+        return []
 
 ANTHROPIC_MODEL = "claude-sonnet-4-6"
 
@@ -79,6 +119,14 @@ def analyze_stock(stock_symbol: str, snapshot: dict, verbose: bool = True) -> di
         deep_data = load_raw(stock_symbol)
     except Exception:
         pass
+
+    # Step 3b: Fetch fresh news and override whatever the scraper cached
+    if verbose:
+        print(f"[Pipeline] Fetching live news for {stock_symbol}...")
+    live_news = _fetch_live_news(stock_symbol)
+    snapshot["news"] = live_news
+    if verbose:
+        print(f"[Pipeline] Got {len(live_news)} live news items")
 
     # Step 4: Build prompt
     prompt = build_analysis_prompt(snapshot, rag_context, stock_symbol, sector=sector, deep_data=deep_data)

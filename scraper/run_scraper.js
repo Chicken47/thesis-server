@@ -30,18 +30,13 @@ try {
   const raw = await fetchStockSnapshot(screenerPath);
   const compact = buildCompactStockSnapshot(raw);
 
-  // Extract clean company name from aboutText (same logic as run_full_scrape.js)
-  const about = compact.aboutText || "";
-  const nameMatch = about.match(
-    /^((?:[A-Z][A-Za-z&\.]*\s*)+?)(?:\s+(?:was|is|has|are|operates|Ltd\b|Limited\b|was\s|is\s))/
-  );
-  const newsQuery = nameMatch ? nameMatch[1].trim() : ticker;
+  const newsQuery = `${ticker} share`;
 
   // Fetch news — non-fatal, Screener data still flows through on failure
   let newsResults = [];
   try {
     process.stderr.write(`[run_scraper] Fetching news: "${newsQuery}"\n`);
-    newsResults = await fetchGoogleNews(newsQuery, 8);
+    newsResults = await fetchGoogleNews(newsQuery, 15);
     process.stderr.write(`[run_scraper] Got ${newsResults.length} news items\n`);
   } catch (newsErr) {
     process.stderr.write(`[run_scraper] News error (non-fatal): ${newsErr.message}\n`);

@@ -17,6 +17,23 @@ from pathlib import Path
 from email.utils import parsedate_to_datetime
 
 
+def _parse_news_date(time_str: str) -> datetime.datetime:
+    """Parse an ISO 8601 or RFC 822 date string. Returns epoch (1970) if unparseable."""
+    if not time_str:
+        return datetime.datetime(1970, 1, 1, tzinfo=datetime.timezone.utc)
+    for parse in (
+        lambda s: parsedate_to_datetime(s),
+        lambda s: datetime.datetime.fromisoformat(s).replace(tzinfo=datetime.timezone.utc)
+        if datetime.datetime.fromisoformat(s).tzinfo is None
+        else datetime.datetime.fromisoformat(s),
+    ):
+        try:
+            return parse(time_str)
+        except Exception:
+            pass
+    return datetime.datetime(1970, 1, 1, tzinfo=datetime.timezone.utc)
+
+
 def _fmt_news_date(time_str: str) -> str:
     """Convert ISO 8601 or RFC 822 date string to '13 Mar 2026' display format."""
     if not time_str:
@@ -657,7 +674,12 @@ def _format_snapshot(snapshot: dict, symbol: str) -> str:
 
     news = snapshot.get("news", [])
     if news:
-        news_lines = [_fmt_news_item(n) for n in news[:8] if n.get("title")]
+        cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=90)
+        fresh_news = [
+            n for n in news
+            if n.get("title") and _parse_news_date(n.get("time", "")) >= cutoff
+        ]
+        news_lines = [_fmt_news_item(n) for n in fresh_news[:8]]
         if news_lines:
             parts.append("**Recent News:**\n" + "\n".join(news_lines))
 

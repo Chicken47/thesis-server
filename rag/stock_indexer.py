@@ -29,9 +29,16 @@ def _get_embedder():
 def _get_chroma(ticker: str):
     """Return (client, collection) for a given ticker."""
     import chromadb
+    import shutil
     index_dir = CACHE_DIR / ticker.upper() / "rag_index"
     index_dir.mkdir(parents=True, exist_ok=True)
-    client = chromadb.PersistentClient(path=str(index_dir))
+    try:
+        client = chromadb.PersistentClient(path=str(index_dir))
+    except ValueError:
+        # Stale or old-format index — wipe and recreate
+        shutil.rmtree(index_dir)
+        index_dir.mkdir(parents=True, exist_ok=True)
+        client = chromadb.PersistentClient(path=str(index_dir))
     collection = client.get_or_create_collection(
         name="stock_context",
         metadata={"hnsw:space": "cosine"},

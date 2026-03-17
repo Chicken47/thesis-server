@@ -29,19 +29,12 @@ try {
   const data = await fetchFullStockData(screenerPath);
   process.stderr.write(`[full_scrape] Screener done. Sections: P&L=${data.annualPL?.values?.length || 0} rows, BS=${data.balanceSheet?.values?.length || 0} rows, CF=${data.cashFlows?.values?.length || 0} rows, Peers=${data.peerComparison?.peers?.length || 0}, Docs=${data.documents?.length || 0}\n`);
 
-  // Fetch News — build a clean company-name query from aboutText
-  const about = data.aboutText || "";
-  // Extract the company name: leading capitalized words before a verb/common suffix
-  const nameMatch = about.match(
-    /^((?:[A-Z][A-Za-z&\.]*\s*)+?)(?:\s+(?:was|is|has|are|operates|Ltd\b|Limited\b|was\s|is\s))/
-  );
-  const companyName = nameMatch ? nameMatch[1].trim() : ticker;
-  const newsQuery = companyName;
+  const newsQuery = `${ticker} share`;
 
   let news = [];
   try {
     process.stderr.write(`[full_scrape] Fetching news: "${newsQuery}"\n`);
-    news = await fetchGoogleNews(newsQuery, 10);
+    news = await fetchGoogleNews(newsQuery, 15);
     process.stderr.write(`[full_scrape] Got ${news.length} news items\n`);
   } catch (e) {
     process.stderr.write(`[full_scrape] News error (non-fatal): ${e.message}\n`);
