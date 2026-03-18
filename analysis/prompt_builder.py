@@ -13,7 +13,6 @@ baked into the instructions section.
 from __future__ import annotations
 
 import datetime
-from pathlib import Path
 from email.utils import parsedate_to_datetime
 
 
@@ -67,15 +66,13 @@ def _fmt_news_item(n: dict) -> str:
         return f"{header}\n    {snippet}"
     return header
 
-_MACRO_CONTEXT_PATH = Path(__file__).parent.parent / "knowledge_base" / "macro" / "macro_context.md"
-
-
-def _load_macro_context() -> str:
-    """Load macro_context.md if it exists. Returns empty string if missing."""
+def _load_macro_context() -> tuple[str, str]:
+    """Load latest global + india macro snapshots from DB. Returns (global, india) strings."""
     try:
-        return _MACRO_CONTEXT_PATH.read_text(encoding="utf-8").strip()
+        from api.db import get_latest_macro
+        return (get_latest_macro("global") or "", get_latest_macro("india") or "")
     except Exception:
-        return ""
+        return ("", "")
 
 
 def build_analysis_prompt(
@@ -388,31 +385,6 @@ Rule 6 — "summary": MAX 250 characters. Must contain: (1) verdict + deciding f
     "key_themes": ["theme from headlines"],
     "note": "1-sentence explanation of what the headlines signal"
   }},
-  "buy_zones": {{
-    "current_price": 0,
-    "aggressive": {{
-      "low": 0,
-      "high": 0,
-      "for": "high conviction investors willing to pay a premium",
-      "reasoning": "link to bull case assumption from Step 5",
-      "trigger": "condition that justifies entry at this level"
-    }},
-    "conservative": {{
-      "low": 0,
-      "high": 0,
-      "for": "margin-of-safety investors seeking 10–20% discount",
-      "reasoning": "link to base case valuation from Step 4",
-      "trigger": "de-rating event or time-based correction that creates this entry"
-    }},
-    "deep_value": {{
-      "low": 0,
-      "high": 0,
-      "for": "contrarian or distressed buyers requiring 25–40% discount",
-      "reasoning": "link to bear case floor from Step 5 downside scenario",
-      "trigger": "crisis, earnings miss, or sector capitulation that drives price here"
-    }},
-    "position": "overvalued — wait|in aggressive zone — fair for bulls|in conservative zone — good entry|in deep value — exceptional opportunity"
-  }},
   "market_vs_verdikt": {{
     "market_narrative": "one-phrase dominant market story",
     "market_claims": ["claim extracted from news 1", "claim extracted from news 2"],
@@ -429,7 +401,7 @@ Rule 6 — "summary": MAX 250 characters. Must contain: (1) verdict + deciding f
 }}
 ```
 
-Important: conviction is 0-10. verdict is exactly one of: buy, watch, avoid. news_sentiment.overall is exactly one of: positive, neutral, negative, mixed. market_vs_verdikt.trade_signal is exactly one of: FADE, RIDE, IGNORE. buy_zones.position is exactly one of the four phrases above. If current price data is unavailable, set buy_zones.current_price to 0 and all zone low/high to 0.
+Important: conviction is 0-10. verdict is exactly one of: buy, watch, avoid. news_sentiment.overall is exactly one of: positive, neutral, negative, mixed. market_vs_verdikt.trade_signal is exactly one of: FADE, RIDE, IGNORE.
 """
     return prompt.strip()
 
@@ -689,23 +661,33 @@ def _format_snapshot(snapshot: dict, symbol: str) -> str:
 
 # ─── Macro context section ────────────────────────────────────────────────────
 
-_MACRO_MAX_CHARS = 2500  # cap macro injection to keep prompt lean
+_MACRO_MAX_CHARS = 1200  # per-section cap to keep prompt lean
+
+
+def _truncate(text: str) -> str:
+    if len(text) <= _MACRO_MAX_CHARS:
+        return text
+    cut = text.rfind("\n", 0, _MACRO_MAX_CHARS)
+    return text[: cut if cut > _MACRO_MAX_CHARS // 2 else _MACRO_MAX_CHARS].rstrip()
 
 
 def _build_macro_section() -> str:
-    """Inject macro_context.md if present, truncated to _MACRO_MAX_CHARS."""
-    content = _load_macro_context()
-    if not content:
+    """Fetch latest global + India macro snapshots from DB and inject into prompt."""
+    global_ctx, india_ctx = _load_macro_context()
+    if not global_ctx and not india_ctx:
         return ""
-    if len(content) > _MACRO_MAX_CHARS:
-        # Truncate at a newline boundary
-        cut = content.rfind("\n", 0, _MACRO_MAX_CHARS)
-        content = content[: cut if cut > _MACRO_MAX_CHARS // 2 else _MACRO_MAX_CHARS]
-        content = content.rstrip() + "\n\n_(macro context truncated for brevity)_"
+
+    parts = []
+    if global_ctx:
+        parts.append(f"### Global\n{_truncate(global_ctx)}")
+    if india_ctx:
+        parts.append(f"### India\n{_truncate(india_ctx)}")
+
+    body = "\n\n".join(parts)
     return (
-        "## MACROECONOMIC CONTEXT (India, current)\n"
-        "(Generated from live news research — treat as authoritative background)\n\n"
-        f"{content}\n\n---\n\n"
+        "## MACROECONOMIC CONTEXT (live, past 7 days)\n"
+        "(Web-searched at analysis time — treat as authoritative background)\n\n"
+        f"{body}\n\n---\n\n"
     )
 
 

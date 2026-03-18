@@ -43,7 +43,6 @@ def retrieve_context(stock_symbol: str, sector: str = "", company_about: str = "
         "stock_rag_context": stock_rag_text,
         "sector_context": "",
         "governance_context": "",
-        "macro_context": "",
         "template_context": "",
     }
 

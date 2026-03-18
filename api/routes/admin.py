@@ -87,6 +87,22 @@ def purge_rag():
     return jsonify({"deleted": deleted, "count": len(deleted)})
 
 
+@admin_bp.post("/admin/update-macro")
+def update_macro():
+    """Fetch macro context for a single type ('global' or 'india') via Claude web search."""
+    body = request.get_json(silent=True) or {}
+    macro_type = body.get("type")
+    if macro_type not in ("global", "india"):
+        return jsonify({"ok": False, "error": "type must be 'global' or 'india'"}), 400
+    try:
+        from scripts.update_macro import update_macro_one
+        update_macro_one(macro_type, verbose=False)
+        return jsonify({"ok": True, "type": macro_type})
+    except Exception as e:
+        log.error("Macro update failed", extra={"type": macro_type}, exc_info=True)
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 @admin_bp.get("/screener-data/<ticker>")
 def screener_data(ticker: str):
     """Scrape live from Screener.in, persist to DB, return raw JSON."""

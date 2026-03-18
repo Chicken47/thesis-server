@@ -15,7 +15,6 @@ CHROMA_DB_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "chroma_db
 COLLECTION_MAP = {
     "sector_context": "sectors",
     "governance_rules": "governance",
-    "macro_context": "macro",
     "expert_templates": "templates",
 }
 
@@ -63,8 +62,6 @@ def load_markdown_files(subdir: str) -> list[dict]:
             meta["sector"] = SECTOR_TAG_MAP.get(filename, filename.replace(".md", ""))
         elif subdir == "governance":
             meta["type"] = "governance"
-        elif subdir == "macro":
-            meta["type"] = "macro"
         elif subdir == "templates":
             meta["type"] = "template"
 

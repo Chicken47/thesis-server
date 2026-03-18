@@ -142,13 +142,13 @@ def save_analysis(ticker: str, result: dict) -> str:
                     conviction_breakdown, summary,
                     key_strengths, key_risks, red_flags, invalidation_triggers,
                     watch_for_next_quarter, news_sentiment, step_outputs,
-                    sector, raw_response, buy_zones, market_vs_verdikt
+                    sector, raw_response, market_vs_verdikt
                 ) VALUES (
                     %s, %s, %s, %s,
                     %s, %s,
                     %s, %s, %s, %s,
                     %s, %s, %s,
-                    %s, %s, %s, %s
+                    %s, %s, %s
                 ) RETURNING id
                 """,
                 (
@@ -170,7 +170,6 @@ def save_analysis(ticker: str, result: dict) -> str:
                         "text": result.get("raw_response", ""),
                         "rag_context_length": result.get("rag_context_length", 0),
                     }),
-                    _J(result.get("buy_zones") or {}),
                     _J(result.get("market_vs_verdikt") or {}),
                 ),
             )
@@ -538,3 +537,53 @@ def update_checklist_rag_and_prompt(ticker: str, rag_successful: bool, prompt: s
                 (upper, rag_successful, prompt),
             )
     log.debug("stock_checklist rag/prompt updated", extra={"ticker": upper})
+
+
+# ── Macro snapshots ────────────────────────────────────────────────────────────
+
+def save_macro_snapshot(macro_type: str, structured_data: dict, model_used: str = "") -> None:
+    """Insert a new macro snapshot row (global or india).
+
+    structured_data must contain at minimum a 'summary' key (injected into stock prompts).
+    The full structured JSON is stored in the structured_data JSONB column.
+    'content' stores the summary text for backward-compatible LLM injection.
+    """
+    summary = structured_data.get("summary", "")
+    with _conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO macro_snapshots (type, content, structured_data, model_used) VALUES (%s, %s, %s, %s)",
+                (macro_type, summary, _J(structured_data), model_used),
+            )
+    log.debug("macro_snapshot saved", extra={"type": macro_type, "chars": len(summary)})
+
+
+def get_latest_macro(macro_type: str) -> str | None:
+    """Return the summary text of the most recent snapshot (used for stock prompt injection)."""
+    with _conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT content FROM macro_snapshots WHERE type = %s ORDER BY generated_at DESC LIMIT 1",
+                (macro_type,),
+            )
+            row = cur.fetchone()
+            return row["content"] if row else None
+
+
+def get_latest_macro_structured(macro_type: str) -> dict | None:
+    """Return the full structured JSON of the most recent snapshot (used by frontend)."""
+    with _conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT structured_data, generated_at FROM macro_snapshots WHERE type = %s ORDER BY generated_at DESC LIMIT 1",
+                (macro_type,),
+            )
+            row = cur.fetchone()
+            if not row or not row["structured_data"]:
+                return None
+            data = row["structured_data"]
+            if isinstance(data, str):
+                import json as _json
+                data = _json.loads(data)
+            data["generated_at"] = row["generated_at"].isoformat() if row["generated_at"] else None
+            return data

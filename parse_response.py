@@ -97,7 +97,6 @@ def build_record(raw: str, ticker: str | None, sector: str | None, model: str | 
         "invalidation_triggers":  parsed_json.get("invalidation_triggers", []),
         "watch_for_next_quarter": parsed_json.get("watch_for_next_quarter", ""),
         "news_sentiment":         parsed_json.get("news_sentiment", {}),
-        "buy_zones":              parsed_json.get("buy_zones", {}),
         "market_vs_verdikt":      parsed_json.get("market_vs_verdikt", {}),
         "step_outputs":           step_outputs,
         "model_used":             model or parsed_json.get("model_used", "unknown"),
