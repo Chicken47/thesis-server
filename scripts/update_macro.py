@@ -22,11 +22,11 @@ import anthropic
 
 MODEL = "claude-sonnet-4-6"
 
-_JSON_SCHEMA = """\
+_GLOBAL_JSON_SCHEMA = """\
 {
   "headline": "2-3 sentence factual overview of the most important developments this week",
   "key_signals": [
-    "4-6 short factual data points with numbers, e.g. 'Fed held rates at 4.5-4.75%', 'Crude oil +8%% WoW at $91/bbl'"
+    "4-6 short factual data points with numbers, e.g. 'Fed held rates at 4.5-4.75%%', 'Crude oil +8%% WoW at $91/bbl'"
   ],
   "developments": [
     {
@@ -38,7 +38,26 @@ _JSON_SCHEMA = """\
   "watch_next_7_days": [
     "2-3 upcoming events or data releases with approximate dates"
   ],
-  "summary": "250-300 word condensed macro context for injection into a stock analysis prompt. Cover the key signals that affect valuations, costs, demand, and investor sentiment. End with: Sectors most affected: X, Y, Z."
+  "summary": "250-300 word (200-250 token) condensed macro context optimized for injection into stock analysis prompts. Focus on quantified signals (rates X%%, crude $Y/bbl, DXY level, tariff %%). Include explicit sector impacts. Skip narrative prose. End with: Sectors most affected: X, Y, Z."
+}"""
+
+_INDIA_JSON_SCHEMA = """\
+{
+  "headline": "2-3 sentence factual overview of the most important developments this week",
+  "key_signals": [
+    "4-6 short factual data points with numbers: Nifty level, FII flows in ₹Cr, INR/USD rate, CPI %%, crude $/bbl"
+  ],
+  "developments": [
+    {
+      "text": "Full explanation of the development and its implications for Indian equities",
+      "impact": "POSITIVE | NEGATIVE | NEUTRAL"
+    }
+  ],
+  "sectors_affected": ["Oil & Gas", "Banking"],
+  "watch_next_7_days": [
+    "2-3 upcoming RBI meetings, data releases, or earnings with approximate dates"
+  ],
+  "summary": "250-300 word (200-250 token) condensed macro context optimized for injection into Indian stock analysis prompts. Focus on quantified signals (Nifty level, FII/DII flows ₹X Cr, INR rate, CPI/WPI %%, crude $/bbl, RBI repo %%). Include explicit sector impacts. Skip narrative prose. End with: Sectors most affected: X, Y, Z."
 }"""
 
 
@@ -51,32 +70,34 @@ Focus on what affects demand, supply, costs, or investor sentiment across sector
 
 Output ONLY a valid JSON object matching this exact structure — no prose before or after, no markdown, no code fences:
 
-{_JSON_SCHEMA}
+{_GLOBAL_JSON_SCHEMA}
 
 Requirements:
 - developments: 5-7 items
 - key_signals: 4-6 items with actual numbers where possible
 - impact must be exactly POSITIVE, NEGATIVE, or NEUTRAL
-- summary must end with the line: Sectors most affected: X, Y, Z
+- summary must be facts-only, optimized for AI consumption
+- summary must end with: Sectors most affected: X, Y, Z
 - output only the JSON object, nothing else"""
 
 
 def _make_india_prompt(today: str) -> str:
     return f"""Today is {today}. Search the web for major Indian economic and equity market developments from the past 7 days. Prioritise news from the last 3 days over older news.
 
-Include: RBI policy signals and rate decisions, FII and DII flow data, rupee movement, CPI/WPI inflation data, Union Budget updates, SEBI regulatory changes, major corporate earnings, and sector-specific events affecting NSE/BSE-listed companies.
+Include: RBI policy signals and rate decisions, FII and DII flow data (in ₹Cr), rupee movement vs USD, CPI/WPI inflation data, Union Budget updates, SEBI regulatory changes, major corporate earnings, Nifty/Sensex levels, and sector-specific events affecting NSE/BSE-listed companies. Also note current Brent crude price if it has moved significantly (affects India's CAD, INR, inflation).
 
 Focus on what materially impacts Indian equity valuations and investment sentiment.
 
 Output ONLY a valid JSON object matching this exact structure — no prose before or after, no markdown, no code fences:
 
-{_JSON_SCHEMA}
+{_INDIA_JSON_SCHEMA}
 
 Requirements:
 - developments: 5-7 items
-- key_signals: 4-6 items with actual numbers where possible (Nifty level, FII flows in ₹Cr, INR rate, CPI %)
+- key_signals: 4-6 items with actual numbers (Nifty, FII ₹Cr, INR, CPI %%)
 - impact must be exactly POSITIVE, NEGATIVE, or NEUTRAL
-- summary must end with the line: Sectors most affected: X, Y, Z
+- summary must be facts-only, optimized for AI consumption
+- summary must end with: Sectors most affected: X, Y, Z
 - output only the JSON object, nothing else"""
 
 
