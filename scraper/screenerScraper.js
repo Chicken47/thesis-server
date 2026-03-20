@@ -216,10 +216,14 @@ function getAboutText($) {
 
 function getRatios($) {
   return $("#top-ratios li")
-    .map((_, el) => ({
-      name: $(el).find(".name").text().trim(),
-      value: $(el).find(".value .number").text().trim(),
-    }))
+    .map((_, el) => {
+      const name = $(el).find(".name").text().trim();
+      const numbers = $(el).find(".value .number");
+      const value = numbers.length > 1
+        ? numbers.map((_, n) => $(n).text().trim()).get().join(" / ")
+        : numbers.text().trim();
+      return { name, value };
+    })
     .get()
     .filter((r) => r.name);
 }
