@@ -57,8 +57,8 @@ ANTHROPIC_MODEL = "claude-sonnet-4-6"
 # Extended thinking budget (tokens reserved for internal reasoning).
 # The model "thinks" before writing the CoT steps — this improves multi-step
 # financial reasoning significantly.  Remaining tokens go to the output.
-THINKING_BUDGET = 10_000   # tokens for internal reasoning
-MAX_TOKENS      = 16_000   # total (thinking + visible output)
+THINKING_BUDGET = int(os.environ.get("THINKING_BUDGET", 8_500))
+MAX_TOKENS      = THINKING_BUDGET + 6_000   # always leave 6K for visible output
 # Note: temperature is NOT set when extended thinking is enabled.
 # The API requires temperature=1 (its default) in thinking mode.
 
@@ -232,10 +232,17 @@ def analyze_stock(stock_symbol: str, snapshot: dict, verbose: bool = True) -> di
         text_parts     = [b.text     for b in response.content if b.type == "text"]
         raw_text       = "\n".join(text_parts)
 
+        # Capture token usage for cost tracking
+        usage = response.usage
+        input_tokens  = getattr(usage, "input_tokens", 0)
+        output_tokens = getattr(usage, "output_tokens", 0)
+
         if verbose:
             thinking_tokens = sum(len(t) for t in thinking_parts)
+            cost = (input_tokens * 3 + output_tokens * 15) / 1_000_000
             print(f"[Pipeline] Response: {len(raw_text):,} chars output"
-                  f"  |  thinking: {len(thinking_parts)} block(s), ~{thinking_tokens:,} chars")
+                  f"  |  thinking: {len(thinking_parts)} block(s), ~{thinking_tokens:,} chars"
+                  f"  |  tokens: {input_tokens:,} in / {output_tokens:,} out  |  cost: ~${cost:.4f}")
 
         # Persist thinking for inspection alongside the prompt
         if thinking_parts:
@@ -265,6 +272,8 @@ def analyze_stock(stock_symbol: str, snapshot: dict, verbose: bool = True) -> di
     parsed["step_outputs"] = _extract_step_outputs(raw_text)
     parsed["model_used"] = ANTHROPIC_MODEL
     parsed["sector"] = sector
+    parsed["input_tokens"] = input_tokens
+    parsed["output_tokens"] = output_tokens
     parsed["rag_context_length"] = len(rag_context)
     parsed["rag_context"] = {
         "total_chars": len(rag_context),

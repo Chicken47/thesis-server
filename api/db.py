@@ -142,14 +142,20 @@ def save_analysis(ticker: str, result: dict) -> str:
                     conviction_breakdown, summary,
                     key_strengths, key_risks, red_flags, invalidation_triggers,
                     watch_for_next_quarter, news_sentiment, step_outputs,
-                    sector, raw_response, market_vs_verdikt
+                    sector, raw_response, market_vs_verdikt,
+                    buy_zones,
+                    input_tokens, output_tokens,
+                    is_incremental, based_on_analysis_id, changes_made
                 ) VALUES (
                     %s, %s, %s, %s,
                     %s, %s,
                     %s, %s, %s, %s,
                     %s, %s, %s,
+                    %s, %s, %s,
+                    %s,
+                    %s, %s,
                     %s, %s, %s
-                ) RETURNING id
+                ) RETURNING id, created_at
                 """,
                 (
                     ticker.upper(),
@@ -171,9 +177,117 @@ def save_analysis(ticker: str, result: dict) -> str:
                         "rag_context_length": result.get("rag_context_length", 0),
                     }),
                     _J(result.get("market_vs_verdikt") or {}),
+                    _J(result.get("entry_guidance") or {}),
+                    result.get("input_tokens"),
+                    result.get("output_tokens"),
+                    bool(result.get("is_incremental", False)),
+                    result.get("based_on_analysis_id") or None,
+                    _J(result.get("changes_made") or []),
                 ),
             )
-            return str(cur.fetchone()["id"])
+            row = cur.fetchone()
+            analysis_id = str(row["id"])
+            analysed_at = row["created_at"]
+
+    # Insert into conviction_timeline
+    save_conviction_timeline(
+        ticker=ticker,
+        analysis_id=analysis_id,
+        conviction=result.get("conviction"),
+        verdict=(result.get("verdict") or "").upper() or None,
+        analysis_type="incremental" if result.get("is_incremental") else "full",
+        changes_made=result.get("changes_made") or [],
+        analysed_at=analysed_at,
+    )
+
+    return analysis_id
+
+
+def save_conviction_timeline(
+    ticker: str,
+    analysis_id: str,
+    conviction: float | None,
+    verdict: str | None,
+    analysis_type: str = "full",
+    changes_made: list | None = None,
+    analysed_at=None,
+) -> None:
+    """Insert one row into the conviction_timeline table."""
+    with _conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO conviction_timeline
+                  (stock_symbol, analysis_id, conviction, verdict, analysis_type, changes_made, analysed_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    ticker.upper(),
+                    analysis_id,
+                    conviction,
+                    verdict,
+                    analysis_type,
+                    _J(changes_made or []),
+                    analysed_at,
+                ),
+            )
+    log.debug("conviction_timeline row inserted", extra={"ticker": ticker.upper(), "analysis_id": analysis_id[:8]})
+
+
+def get_latest_analysis_for_ticker(ticker: str) -> dict | None:
+    """Return the most recent analysis for a ticker (full dict)."""
+    with _conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT * FROM analyses
+                WHERE stock_symbol = %s
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (ticker.upper(),),
+            )
+            return _row(cur.fetchone())
+
+
+def get_incremental_staleness(ticker: str) -> dict:
+    """
+    Returns:
+      - consecutive_incrementals: number of incremental rows since last full analysis
+      - days_since_full: days elapsed since the most recent full (is_incremental=false) analysis
+    Used to enforce the hard cap before running another incremental.
+    """
+    with _conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT is_incremental, created_at
+                FROM analyses
+                WHERE stock_symbol = %s
+                ORDER BY created_at DESC
+                LIMIT 20
+                """,
+                (ticker.upper(),),
+            )
+            rows = cur.fetchall()
+
+    consecutive = 0
+    last_full_at = None
+    for row in rows:
+        if row["is_incremental"]:
+            consecutive += 1
+        else:
+            last_full_at = row["created_at"]
+            break
+
+    days_since_full = None
+    if last_full_at:
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc)
+        ts = last_full_at if last_full_at.tzinfo else last_full_at.replace(tzinfo=timezone.utc)
+        days_since_full = (now - ts).days
+
+    return {"consecutive_incrementals": consecutive, "days_since_full": days_since_full}
 
 
 def get_analysis_by_id(analysis_id: str) -> dict | None:

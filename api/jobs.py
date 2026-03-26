@@ -6,7 +6,7 @@ Status is persisted to Neon jobs table — clients poll /api/jobs/<id>.
 """
 
 import threading
-from api.db import update_job, save_analysis, upsert_stock, save_full_screener_data
+from api.db import update_job, save_analysis, upsert_stock, save_full_screener_data, get_latest_analysis_for_ticker, get_incremental_staleness
 from api.logger import get_logger
 
 
@@ -135,3 +135,74 @@ def run_cache_stock_job(
 
     threading.Thread(target=_run, daemon=True, name=f"cache-{ticker}").start()
     log.debug("Cache thread spawned", extra={"job_id": job_id[:8], "ticker": ticker})
+
+
+def run_incremental_analyze_job(job_id: str, ticker: str) -> None:
+    """
+    Incremental reanalysis in a background thread:
+      1. Fetch latest analysis from DB
+      2. Call incremental pipeline (news + macro only, no full scrape)
+      3. If model flags new quarterly results → fall back to full analysis
+      4. Save result + update job
+    """
+    def _run():
+        ctx = {"job_id": job_id[:8], "ticker": ticker}
+        try:
+            log.info("Incremental analyze job started", extra=ctx)
+            update_job(job_id, "running")
+
+            # Step 1: Get previous analysis
+            previous = get_latest_analysis_for_ticker(ticker)
+            if not previous:
+                log.warning("No previous analysis — falling back to full analyze", extra=ctx)
+                update_job(job_id, "failed", error_message="No previous analysis found. Run full analysis first.")
+                return
+
+            # Step 1b: Hard cap — force full analysis if stale
+            staleness = get_incremental_staleness(ticker)
+            consecutive = staleness["consecutive_incrementals"]
+            days_since_full = staleness["days_since_full"]
+            CAP_INCREMENTS = 5
+            CAP_DAYS = 30
+            if consecutive >= CAP_INCREMENTS or (days_since_full is not None and days_since_full >= CAP_DAYS):
+                reason = (
+                    f"{consecutive} consecutive incrementals" if consecutive >= CAP_INCREMENTS
+                    else f"{days_since_full} days since last full analysis"
+                )
+                log.info("Hard cap reached — forcing full analysis", extra={**ctx, "reason": reason})
+                update_job(job_id, "failed", error_message=f"REQUIRES_FULL_ANALYSIS: Hard cap ({reason})")
+                return
+
+            # Step 2: Run incremental pipeline
+            from analysis.incremental import incremental_reanalysis
+            result = incremental_reanalysis(ticker, previous, verbose=False)
+
+            if result.get("error"):
+                log.error("Incremental analysis error", extra={**ctx, "error": result["error"]})
+                update_job(job_id, "failed", error_message=result["error"])
+                return
+
+            # Step 3: If model detected new quarterly results, flag for full reanalysis
+            if result.get("requires_full_analysis"):
+                reason = result.get("reason", "New quarterly results detected")
+                log.info("Incremental flagged full reanalysis needed", extra={**ctx, "reason": reason})
+                update_job(job_id, "failed", error_message=f"REQUIRES_FULL_ANALYSIS: {reason}")
+                return
+
+            # Step 4: Save
+            log.info("Incremental analysis complete", extra={
+                **ctx,
+                "verdict": result.get("verdict"),
+                "conviction": result.get("conviction"),
+                "changes": len(result.get("changes_made", [])),
+            })
+            analysis_id = save_analysis(ticker, result)
+            update_job(job_id, "done", result_id=analysis_id)
+            log.info("Incremental job DONE", extra={**ctx, "analysis_id": analysis_id[:8]})
+
+        except Exception as e:
+            log.error("Incremental job FAILED", extra=ctx, exc_info=True)
+            update_job(job_id, "failed", error_message=_clean_error(e))
+
+    threading.Thread(target=_run, daemon=True, name=f"refresh-{ticker}").start()
+    log.debug("Incremental thread spawned", extra={"job_id": job_id[:8], "ticker": ticker})

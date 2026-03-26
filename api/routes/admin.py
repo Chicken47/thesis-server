@@ -1,6 +1,6 @@
 from flask import Blueprint, jsonify, request
-from api.db import create_job, save_full_screener_data, upsert_stock
-from api.jobs import run_cache_stock_job, run_analyze_job
+from api.db import create_job, save_full_screener_data, upsert_stock, get_latest_analysis_for_ticker
+from api.jobs import run_cache_stock_job, run_analyze_job, run_incremental_analyze_job
 from cache.stock_store import get_or_fetch
 from rag.stock_indexer import index_exists
 from api.logger import get_logger
@@ -46,6 +46,28 @@ def trigger_analysis(ticker: str):
         "status": "queued",
         "rag_available": rag_ready,
         "message": f"Analysis started. Poll GET /api/jobs/{job_id}.",
+    }), 202
+
+
+@admin_bp.post("/refresh/<ticker>")
+def trigger_incremental(ticker: str):
+    """Quick refresh — incremental reanalysis using news + macro only."""
+    ticker = ticker.upper()
+    previous = get_latest_analysis_for_ticker(ticker)
+    if not previous:
+        return jsonify({
+            "error": "No previous analysis found. Run full analysis first.",
+            "requires_full_analysis": True,
+        }), 400
+
+    job_id = create_job(ticker, "incremental_analyze")
+    run_incremental_analyze_job(job_id, ticker)
+    log.info("Incremental job triggered", extra={"ticker": ticker, "job_id": job_id[:8]})
+    return jsonify({
+        "job_id": job_id,
+        "ticker": ticker,
+        "status": "queued",
+        "message": f"Quick refresh started. Poll GET /api/jobs/{job_id}.",
     }), 202
 
 

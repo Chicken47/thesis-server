@@ -129,30 +129,9 @@ If a PDF RESEARCH EXCERPTS section is present, you MUST draw on it in Steps 1 an
 Before the JSON block you MUST produce ALL SEVEN tagged sections below, in order.
 Do NOT skip any tag. Do NOT merge steps. Every tag must appear exactly once in your response.
 
-<step1_output>
-Business Quality Score: [X]/10
-[Cite actual ROE/ROCE numbers, name the specific moat, address sector risks. No generic statements.]
-</step1_output>
+Required tags (in order): <step1_output>, <step2_output>, <step3_output>, <step4_output>, <step5_output>, <step6_output>, <step7_output>
 
-<step2_output>
-Financial Health Score: [X]/10
-[Quote actual numbers: revenue CAGR X%, OPM range X%–Y%, EPS from X to Y, OCF/PAT = X. No vague statements.]
-</step2_output>
-
-<step3_output>
-Governance Score: [X]/10
-Promoter holding: X% | Pledge: X% (or "not mentioned, assumed 0%")
-[Red flags: only actual issues from the data, or "None identified"]
-</step3_output>
-
-<step4_output>
-Valuation Score: [X]/10
-Current PE: Xx | Sector benchmark: Xx–Xx | Premium/discount: X%
-[Peer growth comparison and PEG conclusion]
-</step4_output>
-
-<step5_output>
-Weighted conviction calculation:
+<step5_output> must include the full weighted conviction calculation:
   Business Quality : [X]/10 × 0.5 = [Y]
   Financial Health  : [X]/10 × 0.2 = [Y]
   Governance        : [X]/10 × 0.2 = [Y]
@@ -160,30 +139,10 @@ Weighted conviction calculation:
   Subtotal          : [Z]
   Macro adjustment  : [±N] ([cite specific macro fact, or "0 — no clear signal"])
   Final conviction  : [Z]/10
+  Verdict: [BUY | WATCH | AVOID]
 
-Verdict: [BUY | WATCH | AVOID]
-[One sentence on the deciding factor]
-</step5_output>
-
-<step6_output>
-BUY ZONES (derived from bull/bear price scenarios in Step 5):
-  Current price: ₹[X]
-  AGGRESSIVE BUY: ₹[A]–₹[B] | For: [investor type] | Reasoning: [link to bull case] | Trigger: [entry condition]
-  CONSERVATIVE BUY: ₹[C]–₹[D] | For: [investor type] | Reasoning: [link to base case] | Trigger: [event/de-rating]
-  DEEP VALUE: ₹[E]–₹[F] | For: [investor type] | Reasoning: [link to bear case floor] | Trigger: [crisis/capitulation]
-  Position: [overvalued — wait | in aggressive zone — fair for bulls | in conservative zone — good entry | in deep value — exceptional opportunity]
-</step6_output>
-
-<step7_output>
-MARKET NARRATIVE vs VERDIKT POV:
-  Dominant market story: [growth/turnaround/distress/hype — in one phrase]
-  Market claims: [key claims extracted from news headlines]
-  Emotional tone: [euphoric/fearful/neutral]
-  VERDIKT fundamental view: [what the numbers actually show]
-  Gap: Market expects [X metric] | Fundamentals support [Y metric] | Magnitude: [Large/Medium/Small/Aligned]
-  Trade signal: [FADE | RIDE | IGNORE]
-  Reasoning: [one sentence why]
-</step7_output>
+<step6_output> must include: Current price + 4 entry zones (OVERVALUED/FAIR/GOOD/EXCEPTIONAL) + current_zone + target_entry + one-sentence action.
+<step7_output> must include: Dominant story + Market claims (with dates/sources) + VERDIKT view + Gap magnitude + Trade signal + one-sentence reasoning.
 
 ---
 
@@ -274,94 +233,100 @@ VERDICT RULES:
 - If verdict = WATCH, the summary MUST contain: "WATCH means: [specific action]. Becomes BUY if [specific condition]. Becomes AVOID if [specific condition]."
 
 DOWNSIDE SCENARIO (mandatory for all stocks):
-- Quote the 52-week high and current price from market indicators. Calculate % from high.
-- At the current PE of X, the market is pricing in approximately Y% earnings growth.
-- Bear case: if growth slows to Z%, a fair PE would be W → implied price = ₹V → X% downside from current.
-- Bull case: if growth accelerates to A%, PE re-rates to B → implied price = ₹C → X% upside.
-- State: "Risk/reward ratio is [favorable/balanced/unfavorable] because [specific reason with numbers]."
-- Only skip if 52-week price data is entirely absent from the snapshot.
+- Quote 52-week high + current price; calculate % from high.
+- Bear case: growth slows to Z% → fair PE = W → implied ₹V → X% downside.
+- Bull case: growth accelerates → PE re-rates → implied price → upside %.
+- Conclude: "Risk/reward is [favorable/balanced/unfavorable] because [numbers]."
+- Skip only if 52-week price data is entirely absent.
 
 MACRO ADJUSTMENT (±0.5 max, never exceed):
-Use the MACROECONOMIC CONTEXT section as primary source. Rules:
-- +0.3 to +0.5: direct, confirmed tailwind (cite specific policy + transmission mechanism)
-- +0.1 to +0.2: mild industry-level tailwind
-- 0: default unless clear directional impact; state "0 — no clear signal"
+Use the MACROECONOMIC CONTEXT section as primary source.
+
+Reasoning process (do this explicitly):
+1. Identify this stock's PRIMARY macro driver (rates/credit costs, commodity input prices, FX, regulatory policy, consumption demand, capex cycle — pick the one that most directly moves earnings)
+2. From the macro context, check whether that driver is a tailwind or headwind RIGHT NOW (cite the specific fact + date)
+3. Assess magnitude:
+   - Material (±0.4–0.5): direct, confirmed transmission to earnings (e.g. rate cut already reducing borrowing costs, INR move already in margin guidance)
+   - Moderate (±0.2–0.3): likely impact but not yet reflected in results
+   - Minor (±0.1): indirect or sector-wide noise
+4. If multiple offsetting factors, net them — don't double-count what's already priced into Step 1 score
+5. If ambiguous, conflicting signals, or macro section absent → 0
+
+Scale:
+- +0.3 to +0.5: confirmed, direct tailwind with transmission mechanism
+- +0.1 to +0.2: mild tailwind
+- 0: default; state "0 — no clear signal" or "0 — macro context unavailable"
 - -0.1 to -0.5: headwind (same specificity required)
-- FORBIDDEN: vague adjustments ("positive environment") / double-counting (if already in Step 1 score, don't add macro again) / adjustments >0.5
-Sector signals: IT: INR depreciation +0.5 / US slowdown -0.5 | Banking/NBFC: rate cut cycle +0.3→+0.5 / rate pause neutral / rising NPA -0.5 | Energy/OMCs: crude >$85 -0.5 / $65–75 neutral | FMCG: bad monsoon -0.5 / consumption boost +0.5 | Infra: capex front-loading +0.5 | Hospitality: disruptions -0.3→-0.5 / strong GDP +0.3 | Other: identify primary driver; clear signal ±0.3–0.5, ambiguous 0–±0.2
+
+FORBIDDEN: vague adjustments ("positive environment") / double-counting / adjustments >0.5
+
+Example output format:
+"Primary driver: borrowing cost (NBFC). RBI cut Dec 2025 (6.25%→6.00%) reduces cost of funds = +0.3. Feb 2026 pause signals no further near-term tailwind — not adding more. Net: +0.3"
+
 Cite the specific macro fact with date. If macro section absent, write "0 — macro context unavailable".
 
 → Write your answer inside <step5_output> ... </step5_output>
 
-### Step 6: Buy Zones — Entry Price Framework
-Extract current price from snapshot. If unavailable, set all zone values to 0 and skip.
+### Step 6: Entry Guidance
 
-ZONE CALCULATION (all anchored to your Step 5 price scenarios — do not invent):
-- AGGRESSIVE BUY: lower = current price × 0.85–0.90 OR book value (whichever gives better support); upper = current price ± 5%. Should offer 40–60% upside to bull case from mid-point.
-- CONSERVATIVE BUY: lower = current × 0.70–0.80; upper = current × 0.75–0.85. Align with base case fair value ±10%. Offers 25–40% upside from mid-point.
-- DEEP VALUE: lower = bear case floor from Step 5; upper = current × 0.50–0.65 OR 0.8× book value (whichever is lower). Minimum 50% upside even in bear case.
+Extract current price from snapshot. If unavailable, set all prices to 0 and set current_zone = "FAIR".
 
-HARD RULES:
-- Zones must NOT overlap (aggressive high < conservative low < deep value high)
-- Every zone must cite the specific valuation assumption it's anchored to
-- Trigger must be a specific event ("GNPA exceeds 4%" / "EPS crosses ₹X") — NOT "if market falls"
-- If all three zones are within 15% of each other: recalculate — insufficient differentiation
-- If P/B at deep value zone > 1.2x: add WARNING — may not provide genuine margin of safety
+Using Step 5 base case fair value, compute 3 zone thresholds, then round each to the nearest clean number:
+- Rounding rule: price <₹100 → nearest ₹5 | ₹100–₹500 → nearest ₹10 | ₹500–₹2000 → nearest ₹25 | >₹2000 → nearest ₹50
+- threshold_A = base case fair value × 1.05 (rounded) — OVERVALUED above this
+- threshold_B = base case fair value × 0.92 (rounded) — FAIR between B and A
+- threshold_C = base case fair value × 0.78 (rounded) — GOOD between C and B; EXCEPTIONAL below C
 
-POSITION (use exact phrase):
-- Current price > aggressive high + 10%: "overvalued — wait for correction"
-- Within aggressive zone: "at aggressive zone — fair for bulls with conviction"
-- At aggressive/conservative boundary: "approaching value zone — watch for conservative entry"
-- Within conservative zone: "in conservative buy zone — good entry for most investors"
-- Within deep value zone: "in deep value zone — exceptional opportunity if thesis intact"
+Zones (no overlaps, use rounded thresholds):
+- OVERVALUED: above threshold_A → action: "Wait for correction"
+- FAIR: threshold_B to threshold_A → action: "Entry for high-conviction bulls"
+- GOOD: threshold_C to threshold_B → action: "Strong entry for most investors"
+- EXCEPTIONAL: below threshold_C → action: "Load up if thesis intact"
+
+Set current_zone: which zone does current price fall into?
+Set target_entry: midpoint of GOOD zone. Apply same rounding rule.
+Set upside_from_target: (base_case_fair_value − target_entry) / target_entry as "X%".
+Set visual_position.distance_to_good: "₹X drop needed (−Y%)" or "already in good zone" or "₹X rise needed (+Y%)"
+Set visual_position.distance_to_exceptional: "₹X drop needed (−Y%)" or "already in exceptional zone"
+Set action: one sentence on what to do at current price (max 80 chars).
 
 → Write your answer inside <step6_output> ... </step6_output>
 
 ### Step 7: Market Narrative vs VERDIKT POV
 
 EXTRACTION (NEVER invent — only use news items present in the data):
-- Scan news for the dominant story. If <3 news items or no clear narrative: set trade_signal = "IGNORE", explain.
-- Market claims: 2–5 claims, each citing source + date + specific number if available.
-  GOOD: "[15 Mar 2026 — ET] Targets 40% revenue growth for FY26 based on deal pipeline"
-  BAD: "Market believes growth will continue" (vague, no source)
+- If <3 news items or no clear narrative: trade_signal = "IGNORE".
+- Market claims: 2–5, each citing source + date + specific number. No vague claims.
 
-VERDIKT VIEW (from your Steps 1–5):
-- Acknowledge what the narrative gets RIGHT (be honest; not everything is FADE)
-- Identify where narrative is CONTRADICTED by numbers with specific data
-- Format: "Narrative claims X → data shows Y (cite step and figure)"
+VERDIKT VIEW: Acknowledge what narrative gets RIGHT; then show where it's contradicted by numbers (cite step + figure).
 
-GAP QUANTIFICATION (must include specific metric + timeframe):
-- Market expects: [X% growth / Y margins / Z multiple over FY26–27]
-- Fundamentals support: [A% / B / C — cite which data point]
-- Large >30% deviation | Medium 15–30% | Small <15% | Aligned <5%
+GAP: Market expects [X metric FY26-27] | Fundamentals support [Y — cite data]. Large >30% | Medium 15–30% | Small <15% | Aligned <5%.
 
-TRADE SIGNAL (must be consistent with verdict):
-- FADE: market pricing 2+ years out OR ignoring material risk → aligns with AVOID or upper WATCH
-- RIDE: de-rating overdone OR quality improving faster than market realises → aligns with BUY or lower WATCH
-- IGNORE: narrative matches fundamentals → aligns with WATCH at fair value
-- CONSISTENCY CHECKS: FADE + BUY verdict = ERROR; RIDE + AVOID verdict = ERROR; Large gap + IGNORE = ERROR
+TRADE SIGNAL: FADE = pricing 2+ years out or ignoring material risk (→ AVOID/upper WATCH). RIDE = de-rating overdone (→ BUY/lower WATCH). IGNORE = narrative matches fundamentals (→ WATCH).
+CONSISTENCY: FADE+BUY = ERROR. RIDE+AVOID = ERROR. Large gap+IGNORE = ERROR.
 
 → Write your answer inside <step7_output> ... </step7_output>
 
 RULES FOR THE JSON OUTPUT:
 
 Rule 1 — "conviction": number 0-10. Must equal your weighted total above.
-Rule 2 — "invalidation_triggers": NEGATIVE failure conditions that would break the thesis.
+Rule 2 — "invalidation_triggers": NEGATIVE failure conditions that would break the thesis. Max 5 items.
   CORRECT: "EBIT margin falls below 23% for 2 consecutive quarters"
   WRONG: "Improvement in governance" (that's an upside, not a trigger)
-Rule 3 — "key_risks": Specific. Name the revenue segment, metric, or mechanism.
-  For cyclical/seasonal businesses (hospitality, retail, agrochemicals, tourism):
-  Do NOT flag known seasonal patterns as risks — Q1/Q2 slowdowns for a hotel chain are expected, not a risk.
-  ONLY flag seasonality if it is WORSENING (e.g., peak season revenues declining YoY, or off-season losses deepening).
+Rule 3 — "key_risks": Max 5 items. Max 8 words per item — phrase only, no sentences. Name the specific metric or mechanism (e.g. "GRM compression on Brent >$110", "GNPA exceeds 4%"). For cyclical businesses: skip normal seasonal patterns — only flag if WORSENING YoY.
 Rule 4 — "red_flags": ONLY issues found in the data. If none: ["None identified from available data"]
 Rule 5 — "news_sentiment.note": DISTINGUISH confirmed revenue from mere announcements.
   Partnerships / MoUs / AI tie-ups with NO disclosed TCV or deal value = NOT a revenue-positive signal.
   CORRECT: "OpenAI partnership announced — no TCV disclosed. Watch for concrete deal wins over next 2 quarters before treating as positive."
   WRONG: "OpenAI partnership signals strong AI positioning" (no revenue confirmed — do not price in)
   Only call news positive if: earnings call confirms revenue impact, or TCV/contract value is explicitly stated.
-Rule 6 — "summary": MAX 250 characters. Must contain: (1) verdict + deciding factor in one sentence, (2) key strength, (3) key risk, (4) current valuation context.
-  Format: "[Stock] is [VERDICT] at [X]/10 because [deciding factor]. [Key strength] offset by [key risk] → [favorable/balanced/unfavorable] risk/reward at ₹[price] ([valuation metric])."
-  If verdict = WATCH: add "WATCH means: [action]. BUY if [condition]. AVOID if [condition]."
+Rule 6 — "summary": 3–4 sentences. Write for someone who has never heard of this company.
+  S1: "[Company] is a [type] with [moat/position], [key growth metric with actual number] — [vs peers or context]."
+  S2: "The stock sits at [VERDICT] at [X]/10 because [the specific thing blocking a higher rating — cite the data point]."
+  S3: "[What makes valuation interesting or concerning] but [what is not yet resolved]."
+  Optional S4 only if adds new info (e.g. catalyst or risk not covered): one sentence max.
+  Tone: analytical, name the tension, always cite numbers. Think "fund manager two-liner, not sell-side cheerleader."
+  NO temporal language. NO buy zone or entry price ranges.
 
 ```json
 {{
@@ -374,20 +339,37 @@ Rule 6 — "summary": MAX 250 characters. Must contain: (1) verdict + deciding f
     "governance": 0,
     "valuation": 0
   }},
-  "summary": "2-3 sentence plain English summary of the thesis",
+  "summary": "[What company does + market position]. [VERDICT at X/10 — deciding factor]. [Key strength] but [key risk]. [At ₹price, valuation metric — stretched/balanced/attractive].",
   "key_strengths": ["strength 1", "strength 2"],
   "key_risks": ["risk 1", "risk 2"],
   "red_flags": ["red flag 1"],
   "invalidation_triggers": ["specific metric change that would invalidate this thesis"],
-  "watch_for_next_quarter": "what to watch in the next earnings",
+  "watch_for_next_quarter": "(1) [metric/event, ≤10 words]; (2) [metric/event, ≤10 words]; (3) [metric/event, ≤10 words]",
   "news_sentiment": {{
     "overall": "positive|neutral|negative|mixed",
     "key_themes": ["theme from headlines"],
     "note": "1-sentence explanation of what the headlines signal"
   }},
+  "entry_guidance": {{
+    "current_price": 0,
+    "current_zone": "OVERVALUED|FAIR|GOOD|EXCEPTIONAL",
+    "action": "one sentence max 80 chars",
+    "target_entry": 0,
+    "upside_from_target": "X%",
+    "zones": [
+      {{"label": "Overvalued", "range": "₹X+", "action": "Wait for correction", "color": "red"}},
+      {{"label": "Fair", "range": "₹Y–X", "action": "Entry for high-conviction bulls", "color": "yellow"}},
+      {{"label": "Good Entry", "range": "₹Z–Y", "action": "Strong entry for most investors", "color": "lightgreen"}},
+      {{"label": "Exceptional", "range": "<₹Z", "action": "Load up if thesis intact", "color": "darkgreen"}}
+    ],
+    "visual_position": {{
+      "distance_to_good": "₹X drop needed (−Y%)",
+      "distance_to_exceptional": "₹X drop needed (−Y%)"
+    }}
+  }},
   "market_vs_verdikt": {{
     "market_narrative": "one-phrase dominant market story",
-    "market_claims": ["claim extracted from news 1", "claim extracted from news 2"],
+    "market_claims": ["[DD Mon YYYY — Source] Specific claim with number", "[DD Mon YYYY — Source] Specific claim with number"],
     "emotional_tone": "euphoric|fearful|neutral",
     "verdikt_view": "what the numbers actually show, contrasting market claims",
     "gap_analysis": {{
@@ -401,7 +383,16 @@ Rule 6 — "summary": MAX 250 characters. Must contain: (1) verdict + deciding f
 }}
 ```
 
-Important: conviction is 0-10. verdict is exactly one of: buy, watch, avoid. news_sentiment.overall is exactly one of: positive, neutral, negative, mixed. market_vs_verdikt.trade_signal is exactly one of: FADE, RIDE, IGNORE.
+Important:
+- conviction is 0-10 and must match the weighted total in <step5_output>
+- verdict is exactly one of: buy, watch, avoid
+- news_sentiment.overall is exactly one of: positive, neutral, negative, mixed
+- market_vs_verdikt.trade_signal is exactly one of: FADE, RIDE, IGNORE
+- trade_signal CONSISTENCY: FADE requires verdict AVOID or upper-WATCH. RIDE requires verdict BUY or lower-WATCH. IGNORE requires verdict WATCH. Any other combination is an error — fix the trade_signal to match.
+- market_claims: every item MUST follow format "[DD Mon YYYY — Source] claim with specific number". Vague claims without source/date are not allowed.
+- key_risks and invalidation_triggers: max 5 items each. All invalidation_triggers must be NEGATIVE failure conditions (metrics worsening), never positive milestones.
+- watch_for_next_quarter: exactly 3 numbered items formatted as "(1) ...; (2) ...; (3) ...". Each item ≤10 words. No prose, no sub-bullets.
+- summary: 3–4 sentences (~400–550 chars). Sentence 1 = company intro. Sentence 2 = verdict + deciding factor. Sentence 3 = strength vs risk. Sentence 4 = valuation context. NO temporal language, NO entry price ranges.
 """
     return prompt.strip()
 
@@ -651,7 +642,7 @@ def _format_snapshot(snapshot: dict, symbol: str) -> str:
             n for n in news
             if n.get("title") and _parse_news_date(n.get("time", "")) >= cutoff
         ]
-        news_lines = [_fmt_news_item(n) for n in fresh_news[:8]]
+        news_lines = [_fmt_news_item(n) for n in fresh_news[:6]]
         if news_lines:
             parts.append("**Recent News:**\n" + "\n".join(news_lines))
 
