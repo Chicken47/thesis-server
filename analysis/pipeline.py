@@ -57,7 +57,7 @@ ANTHROPIC_MODEL = "claude-sonnet-4-6"
 # Extended thinking budget (tokens reserved for internal reasoning).
 # The model "thinks" before writing the CoT steps — this improves multi-step
 # financial reasoning significantly.  Remaining tokens go to the output.
-THINKING_BUDGET = int(os.environ.get("THINKING_BUDGET", 8_500))
+THINKING_BUDGET = int(os.environ.get("THINKING_BUDGET", 10_000))
 MAX_TOKENS      = THINKING_BUDGET + 6_000   # always leave 6K for visible output
 # Note: temperature is NOT set when extended thinking is enabled.
 # The API requires temperature=1 (its default) in thinking mode.
