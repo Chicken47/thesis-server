@@ -213,10 +213,19 @@ MANDATORY: Quote the exact PE ratio from the ratios data.
   * List each peer's NP Gr% and PE. Compute sector median growth and median PE.
   * State: "[Company] at X% growth vs sector median Y% — above/below."
   * SCORING CAPS FROM PEER COMPARISON (these override your initial estimate):
-    - Company ONLY negative/zero grower in peer set → valuation score MAX 3/10 regardless of absolute PE
-    - Company growing faster than all peers AND trading at discount to median → valuation score MIN 7/10
-    - Company slowest grower AND trading at premium to all peers → valuation score MAX 3/10
-    - Company fastest grower with PEG below peer median PEG → score 7–9/10
+    - Company ONLY negative/zero grower in peer set → valuation score MAX 3/10 regardless of absolute PE.
+      TIMEFRAME QUALIFIER: Apply this cap ONLY if YoY quarterly NP growth is negative/zero for TWO or more
+      consecutive quarters. If TTM/annual growth is >15% but the latest single quarter is anomalous (base
+      effect, one-off charge, seasonal pattern), do NOT apply the cap — instead note "single-quarter dip,
+      annual trajectory intact" and score on the multi-period trend.
+    - Company growing faster than all peers AND trading at discount to median → valuation score MIN 7/10.
+    - Company slowest grower AND trading at premium to all peers → valuation score MAX 3/10.
+      BOTH conditions must hold simultaneously. Slowest grower at a discount, or a premium PE with in-line
+      growth, does NOT trigger this cap. State explicitly which condition(s) are/aren't met.
+    - Company fastest grower with PEG below peer median PEG → score 7–9/10.
+      IMMUNITY RULE: The fastest grower in the peer set is immune to all scoring caps above regardless of
+      concerns about normalized or one-time earnings. If growth is confirmed fastest, document the concern
+      ("earnings include one-off X") but do not apply a cap — score on the sustainable growth estimate instead.
   * Always state: "Paying [X]x for [Y]% growth vs [Peer] at [A]x for [B]% growth → subject is [better/worse] value"
 - PEG: A stock is only genuinely cheap if PE at discount AND growth ≥ peers. Never call cheap on PE alone.
 → Write your answer inside <step4_output> ... </step4_output>
