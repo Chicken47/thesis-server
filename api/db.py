@@ -188,6 +188,17 @@ def save_analysis(ticker: str, result: dict) -> str:
             row = cur.fetchone()
             analysis_id = str(row["id"])
             analysed_at = row["created_at"]
+            log.info(
+                "Analysis row inserted",
+                extra={
+                    "ticker": ticker.upper(),
+                    "analysis_id": analysis_id[:8],
+                    "is_incremental": bool(result.get("is_incremental", False)),
+                    "based_on": str(result.get("based_on_analysis_id") or "")[:8],
+                    "verdict": result.get("verdict"),
+                    "conviction": result.get("conviction"),
+                },
+            )
 
     # Insert into conviction_timeline
     save_conviction_timeline(

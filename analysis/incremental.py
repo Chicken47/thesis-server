@@ -12,6 +12,7 @@ Automatically falls back to full analysis if new quarterly results are detected.
 """
 
 import json
+import logging
 import os
 import re
 from datetime import datetime, timezone
@@ -21,6 +22,8 @@ from email.utils import parsedate_to_datetime
 
 import anthropic
 import requests
+
+log = logging.getLogger(__name__)
 
 ANTHROPIC_MODEL = "claude-sonnet-4-6"
 INCREMENTAL_THINKING_BUDGET = int(os.environ.get("INCREMENTAL_THINKING_BUDGET", 10_000))
@@ -189,7 +192,9 @@ def _fetch_news(ticker: str, max_results: int = 12) -> list[dict]:
         "Accept": "application/rss+xml, application/xml, text/xml, */*",
     }
     try:
+        log.info("[Incremental] Fetching news", extra={"ticker": ticker, "url": url})
         resp = requests.get(url, headers=headers, timeout=15)
+        log.info("[Incremental] News HTTP response", extra={"ticker": ticker, "status": resp.status_code, "content_len": len(resp.text)})
         root = ET.fromstring(resp.text)
         items = []
         for item in root.iter("item"):
@@ -203,8 +208,11 @@ def _fetch_news(ticker: str, max_results: int = 12) -> list[dict]:
                 continue
             items.append({"title": title, "time": dt.isoformat(), "_dt": dt})
         items.sort(key=lambda x: x["_dt"].timestamp(), reverse=True)
-        return [{"title": i["title"], "time": i["time"]} for i in items[:max_results]]
-    except Exception:
+        result = [{"title": i["title"], "time": i["time"]} for i in items[:max_results]]
+        log.info("[Incremental] News fetched", extra={"ticker": ticker, "count": len(result)})
+        return result
+    except Exception as e:
+        log.error("[Incremental] News fetch FAILED", extra={"ticker": ticker, "error": str(e)}, exc_info=True)
         return []
 
 
@@ -224,14 +232,20 @@ def _get_current_price(ticker: str) -> float | None:
         from pathlib import Path
         import json as _json
         path = Path(__file__).parent.parent / "stock_cache" / ticker.upper() / "raw_full.json"
+        log.info("[Incremental] Looking for current price", extra={"ticker": ticker, "path": str(path), "exists": path.exists()})
         if path.exists():
             raw = _json.loads(path.read_text())
             for r in raw.get("ratios", []):
                 if r.get("name") == "Current Price":
                     val = str(r.get("value", "")).replace(",", "").strip()
-                    return float(val)
-    except Exception:
-        pass
+                    price = float(val)
+                    log.info("[Incremental] Current price found", extra={"ticker": ticker, "price": price})
+                    return price
+            log.warning("[Incremental] Current price not found in ratios", extra={"ticker": ticker})
+        else:
+            log.warning("[Incremental] raw_full.json not found", extra={"ticker": ticker, "path": str(path)})
+    except Exception as e:
+        log.error("[Incremental] Price fetch FAILED", extra={"ticker": ticker, "error": str(e)}, exc_info=True)
     return None
 
 
@@ -296,7 +310,9 @@ def incremental_reanalysis(ticker: str, previous_analysis: dict, verbose: bool =
         global_macro = get_latest_macro("global") or ""
         india_macro = get_latest_macro("india") or ""
         macro_context = f"### Global\n{global_macro}\n\n### India\n{india_macro}"
+        log.info("[Incremental] Macro context fetched", extra={"ticker": upper, "global_len": len(global_macro), "india_len": len(india_macro)})
     except Exception as e:
+        log.error("[Incremental] Macro fetch FAILED", extra={"ticker": upper, "error": str(e)}, exc_info=True)
         if verbose:
             print(f"[Incremental] Macro fetch error: {e}")
 
@@ -336,6 +352,7 @@ def incremental_reanalysis(ticker: str, previous_analysis: dict, verbose: bool =
 
     # Call Claude
     try:
+        log.info("[Incremental] Calling Claude", extra={"ticker": upper, "prompt_len": len(prompt), "thinking_budget": INCREMENTAL_THINKING_BUDGET})
         client = _client()
         response = client.messages.create(
             model=ANTHROPIC_MODEL,
@@ -350,21 +367,29 @@ def incremental_reanalysis(ticker: str, previous_analysis: dict, verbose: bool =
         usage = response.usage
         input_tokens = getattr(usage, "input_tokens", 0)
         output_tokens = getattr(usage, "output_tokens", 0)
+        cost = (input_tokens * 3 + output_tokens * 15) / 1_000_000
+        log.info("[Incremental] Claude response received", extra={"ticker": upper, "input_tokens": input_tokens, "output_tokens": output_tokens, "cost_usd": round(cost, 4), "raw_text_len": len(raw_text)})
 
         if verbose:
-            cost = (input_tokens * 3 + output_tokens * 15) / 1_000_000
             print(f"[Incremental] Done — tokens: {input_tokens:,} in / {output_tokens:,} out | cost: ~${cost:.4f}")
 
     except Exception as e:
+        log.error("[Incremental] Claude call FAILED", extra={"ticker": upper, "error": str(e)}, exc_info=True)
         return {"error": str(e), "stock": upper, "verdict": "error", "model_used": ANTHROPIC_MODEL}
 
     # Parse response
+    log.info("[Incremental] Parsing Claude response", extra={"ticker": upper, "raw_text_preview": raw_text[:200]})
     result = _extract_json(raw_text)
+
+    if result.get("parse_failed"):
+        log.error("[Incremental] JSON parse FAILED", extra={"ticker": upper, "raw_text": raw_text[:1000]})
 
     # Check if model flagged need for full analysis
     if result.get("requires_full_analysis"):
+        reason = result.get('reason', 'unknown')
+        log.info("[Incremental] Model flagged requires_full_analysis", extra={"ticker": upper, "reason": reason})
         if verbose:
-            print(f"[Incremental] Model flagged: requires_full_analysis — {result.get('reason')}")
+            print(f"[Incremental] Model flagged: requires_full_analysis — {reason}")
         result["stock"] = upper
         return result
 

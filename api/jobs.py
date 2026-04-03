@@ -190,15 +190,19 @@ def run_incremental_analyze_job(job_id: str, ticker: str) -> None:
                 return
 
             # Step 4: Save
-            log.info("Incremental analysis complete", extra={
+            log.info("Incremental analysis complete — saving to DB", extra={
                 **ctx,
                 "verdict": result.get("verdict"),
                 "conviction": result.get("conviction"),
                 "changes": len(result.get("changes_made", [])),
+                "is_incremental": result.get("is_incremental"),
+                "based_on": str(result.get("based_on_analysis_id", ""))[:8],
             })
+            log.debug("Incremental result keys", extra={**ctx, "keys": list(result.keys())})
             analysis_id = save_analysis(ticker, result)
+            log.info("save_analysis returned", extra={**ctx, "analysis_id": analysis_id[:8] if analysis_id else "None"})
             update_job(job_id, "done", result_id=analysis_id)
-            log.info("Incremental job DONE", extra={**ctx, "analysis_id": analysis_id[:8]})
+            log.info("Incremental job DONE", extra={**ctx, "analysis_id": analysis_id[:8] if analysis_id else "None"})
 
         except Exception as e:
             log.error("Incremental job FAILED", extra=ctx, exc_info=True)
